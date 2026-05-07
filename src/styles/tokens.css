@@ -1,0 +1,32 @@
+/* src/styles/tokens.css */
+:root {
+  /* spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 22px;
+  --sp-6: 32px;
+
+  /* font sizes (mobile-first, base = 14) */
+  --fs-micro: 7.5px;
+  --fs-small: 9px;
+  --fs-meta: 10px;
+  --fs-body: 13px;
+  --fs-title: 16px;
+  --fs-folio: 27px;
+  --fs-wordmark: 13px;
+
+  /* letter-spacing */
+  --ls-wordmark: 7px;
+  --ls-mono: 1.5px;
+  --ls-section: 2.2px;
+
+  /* radii */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 18px;
+
+  /* lines */
+  --hairline: 1px;
+}

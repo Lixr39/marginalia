@@ -1,0 +1,7 @@
+/* src/styles/fonts.css */
+:root {
+  --font-serif: Georgia, "Source Han Serif SC", "Source Han Serif", "Songti SC", serif;
+  --font-serif-zh: "Songti SC", "Source Han Serif SC", Georgia, serif;
+  --font-mono: 'Courier New', "SF Mono", Menlo, monospace;
+  --font-sans: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+}
