@@ -1,0 +1,339 @@
+.character-select {
+  height: 100vh;
+  overflow-y: auto;
+  background: #0b0b19;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(99, 102, 241, 0.06) 0%, transparent 50%);
+  color: #e8e8f0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 24px;
+}
+
+.cs-header {
+  text-align: center;
+  margin-bottom: 36px;
+  position: relative;
+}
+
+.cs-back-btn {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  background: none;
+  border: none;
+  color: #7777aa;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: color 0.15s, background 0.15s;
+  line-height: 1;
+}
+.cs-back-btn:hover { color: #e0e0f0; background: rgba(255,255,255,0.06); }
+
+.cs-header h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: #f0f0f5;
+  margin: 0 0 8px;
+}
+
+.cs-book-title {
+  font-size: 15px;
+  color: #a78bfa;
+  margin: 0 0 6px;
+}
+
+.cs-subtitle {
+  font-size: 13px;
+  color: #5a5a7a;
+  font-style: italic;
+  margin: 0;
+}
+
+.cs-characters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 900px;
+  margin-bottom: 36px;
+}
+
+.cs-card {
+  background: rgba(22, 22, 46, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  padding: 18px;
+  cursor: pointer;
+  display: flex;
+  gap: 14px;
+  transition: all 0.2s ease;
+}
+
+.cs-card:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(30, 30, 56, 0.6);
+  transform: translateY(-1px);
+}
+
+.cs-card.selected {
+  border-color: rgba(139, 92, 246, 0.5);
+  background: rgba(139, 92, 246, 0.08);
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.1);
+}
+
+.cs-avatar {
+  font-size: 32px;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+}
+
+.cs-info {
+  flex: 1;
+}
+
+.cs-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f0f0f5;
+}
+
+.cs-label {
+  font-size: 12px;
+  color: #a78bfa;
+  margin: 3px 0 6px;
+}
+
+.cs-desc {
+  font-size: 12px;
+  color: #7777aa;
+  line-height: 1.5;
+}
+
+.cs-mode {
+  width: 100%;
+  max-width: 900px;
+  margin-bottom: 28px;
+}
+
+.cs-mode h3 {
+  font-size: 14px;
+  color: #7777aa;
+  margin: 0 0 10px;
+  font-weight: 500;
+}
+
+.cs-mode-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.cs-mode-btn {
+  background: rgba(22, 22, 46, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cs-mode-btn:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.cs-mode-btn.active {
+  border-color: rgba(139, 92, 246, 0.5);
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.mode-icon {
+  font-size: 22px;
+}
+
+.mode-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f0f0f5;
+}
+
+.mode-desc {
+  font-size: 11px;
+  color: #6b6b8d;
+}
+
+.cs-start-btn {
+  padding: 13px 48px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.25);
+}
+
+.cs-start-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.35);
+}
+
+.cs-start-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Custom char tags + actions */
+.cs-card.custom { border-color: rgba(167, 139, 250, 0.12); }
+.cs-name-row { display: flex; align-items: center; gap: 8px; }
+.cs-custom-tag {
+  font-size: 10px;
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.12);
+  padding: 1px 7px;
+  border-radius: 10px;
+  border: 1px solid rgba(167, 139, 250, 0.2);
+}
+.cs-card-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cs-card:hover .cs-card-actions { opacity: 1; }
+.cs-edit-btn,
+.cs-delete-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  color: #6b6b8d;
+  font-size: 13px;
+  padding: 3px 7px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cs-edit-btn:hover { color: #a78bfa; border-color: rgba(167,139,250,0.3); }
+.cs-delete-btn:hover { color: #f87171; border-color: rgba(248,113,113,0.3); }
+
+/* Create card */
+.cs-create-card {
+  border: 1px dashed rgba(167, 139, 250, 0.25);
+  background: rgba(167, 139, 250, 0.03);
+}
+.cs-create-card:hover {
+  border-color: rgba(167, 139, 250, 0.45);
+  background: rgba(167, 139, 250, 0.07);
+}
+.cs-create-icon {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.1);
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+/* ===== Light mode ===== */
+.character-select.light {
+  background: #fef0f3;
+  background-image: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(210, 100, 130, 0.07) 0%, transparent 50%);
+  color: #2d1520;
+}
+
+.character-select.light .cs-header h1 { color: #2d1520; }
+.character-select.light .cs-book-title { color: #c06080; }
+.character-select.light .cs-subtitle { color: #b08090; }
+
+.character-select.light .cs-card {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(190, 130, 140, 0.18);
+}
+.character-select.light .cs-card:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(190, 130, 140, 0.35);
+}
+.character-select.light .cs-card.selected {
+  border-color: rgba(200, 80, 110, 0.45);
+  background: rgba(200, 80, 110, 0.07);
+  box-shadow: 0 4px 20px rgba(200, 80, 110, 0.1);
+}
+
+.character-select.light .cs-avatar {
+  background: rgba(200, 80, 110, 0.06);
+}
+.character-select.light .cs-name { color: #2d1520; }
+.character-select.light .cs-label { color: #c06080; }
+.character-select.light .cs-desc { color: #9a7080; }
+
+.character-select.light .cs-mode h3 { color: #9a7080; }
+.character-select.light .cs-mode-btn {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(190, 130, 140, 0.18);
+}
+.character-select.light .cs-mode-btn:hover {
+  border-color: rgba(190, 130, 140, 0.35);
+}
+.character-select.light .cs-mode-btn.active {
+  border-color: rgba(200, 80, 110, 0.45);
+  background: rgba(200, 80, 110, 0.07);
+}
+.character-select.light .mode-name { color: #2d1520; }
+.character-select.light .mode-desc { color: #9a7080; }
+
+.character-select.light .cs-start-btn {
+  background: linear-gradient(135deg, #d45070, #b83060);
+  box-shadow: 0 4px 16px rgba(200, 60, 90, 0.25);
+}
+.character-select.light .cs-start-btn:hover:not(:disabled) {
+  box-shadow: 0 6px 24px rgba(200, 60, 90, 0.35);
+}
+
+.character-select.light .cs-custom-tag {
+  color: #c06080;
+  background: rgba(200, 80, 110, 0.1);
+  border-color: rgba(200, 80, 110, 0.2);
+}
+.character-select.light .cs-edit-btn,
+.character-select.light .cs-delete-btn {
+  border-color: rgba(190, 130, 140, 0.2);
+  color: #9a7080;
+}
+.character-select.light .cs-edit-btn:hover { color: #c06080; border-color: rgba(200,80,110,0.3); }
+
+.character-select.light .cs-create-card {
+  border-color: rgba(200, 80, 110, 0.25);
+  background: rgba(200, 80, 110, 0.03);
+}
+.character-select.light .cs-create-card:hover {
+  border-color: rgba(200, 80, 110, 0.45);
+  background: rgba(200, 80, 110, 0.07);
+}
+.character-select.light .cs-create-icon {
+  color: #c06080;
+  background: rgba(200, 80, 110, 0.1);
+}
+
+.character-select.light .cs-back-btn { color: #b08090; }
+.character-select.light .cs-back-btn:hover { color: #2d1520; background: rgba(200,80,110,0.07); }

@@ -1,0 +1,125 @@
+/* ===== Container ===== */
+.reader-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ===== Narrow column viewer ===== */
+.reader-viewer {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  width: 100%;
+  max-width: 740px;
+  /* Floating paper effect */
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.03),
+    -32px 0 64px rgba(0,0,0,0.2),
+    32px 0 64px rgba(0,0,0,0.2),
+    0 8px 40px rgba(0,0,0,0.15);
+}
+
+/* Subtle dark vignette on the side margins */
+.reader-container::before,
+.reader-container::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc((100% - 740px) / 2);
+  background: rgba(0,0,0,0.14);
+  pointer-events: none;
+  z-index: 1;
+}
+.reader-container::before { left: 0; }
+.reader-container::after { right: 0; }
+
+/* ===== Error ===== */
+.reader-error {
+  padding: 20px;
+  text-align: center;
+  color: #f87171;
+  font-size: 14px;
+}
+
+/* ===== Chapter scroll indicator (right rail) ===== */
+.reader-chapter-scroll-track {
+  position: absolute;
+  right: 6px;
+  top: 10%;
+  bottom: 10%;
+  width: 3px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 2px;
+  z-index: 10;
+  pointer-events: none;
+}
+.reader-chapter-scroll-thumb {
+  width: 100%;
+  background: rgba(139,92,246,0.5);
+  border-radius: 2px;
+  transition: height 0.1s linear;
+  min-height: 12px;
+}
+
+/* ===== Progress bar ===== */
+.reader-progress-bar-wrap {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(255,255,255,0.04);
+  z-index: 10;
+}
+
+.reader-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(108, 99, 255, 0.5), rgba(168, 100, 200, 0.7));
+  transition: width 0.6s ease;
+  border-radius: 0 1px 1px 0;
+}
+
+/* ===== Paginated click zones ===== */
+.reader-click-prev,
+.reader-click-next {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  min-width: 48px;
+  width: max(48px, calc((100% - 740px) / 2));
+}
+
+.reader-click-prev {
+  left: 0;
+  justify-content: center;
+}
+.reader-click-next {
+  right: 0;
+  justify-content: center;
+}
+
+.reader-click-icon {
+  font-size: 28px;
+  color: rgba(255,255,255,0.15);
+  transition: color 0.2s, transform 0.15s;
+  line-height: 1;
+  user-select: none;
+}
+
+.reader-click-prev:hover .reader-click-icon,
+.reader-click-next:hover .reader-click-icon {
+  color: rgba(255,255,255,0.45);
+  transform: scale(1.15);
+}
+

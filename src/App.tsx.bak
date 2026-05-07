@@ -1,0 +1,1279 @@
+import { useState, useCallback, useRef, useEffect, type RefObject } from 'react'
+import ePub from 'epubjs'
+import JSZip from 'jszip'
+import type { NavItem } from 'epubjs/types/navigation'
+import Reader from './components/Reader/Reader'
+import type { ReaderHandle } from './components/Reader/Reader'
+import Sidebar from './components/Sidebar/Sidebar'
+import type { SidebarHandle } from './components/Sidebar/Sidebar'
+import CharacterSelect from './components/CharacterSelect/CharacterSelect'
+import Settings from './components/Settings/Settings'
+import Bookshelf from './components/Bookshelf/Bookshelf'
+import type { Character, ReadingMode, Message, OpinionCard, BookState, PreReadData, Highlight, ReadingSession } from './types'
+import type { StoredBook } from './store'
+import {
+  getBookState, saveBookState, getLLMConfig,
+  saveBook, updateBookState, updateBookLocation, extractCoverFromEpub,
+} from './store'
+import { PRESET_CHARACTERS } from './characters/presets'
+import { chatCompletion } from './services/llm'
+import { buildPreReadPrompt } from './services/prompt'
+import './App.css'
+
+type AppView = 'home' | 'bookshelf' | 'character-select' | 'reading'
+
+// Theme presets with derived colors for full-page theming
+const THEME_PRESETS = [
+  { name: '深色', bg: '#13132a', color: '#e0e0e0', headerBg: 'rgba(11,11,25,0.95)', sidebarBg: 'rgba(14,14,30,0.95)', surface: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.06)', muted: '#7777aa', inputBg: 'rgba(11,11,25,0.6)', hover: 'rgba(255,255,255,0.06)' },
+  { name: '暖色', bg: '#1a1714', color: '#d4cbba', headerBg: 'rgba(22,19,16,0.95)', sidebarBg: 'rgba(24,21,18,0.95)', surface: 'rgba(255,235,200,0.04)', border: 'rgba(255,235,200,0.06)', muted: '#8a7e6e', inputBg: 'rgba(18,15,12,0.6)', hover: 'rgba(255,235,200,0.06)' },
+  { name: '浅色', bg: '#f5f0e8', color: '#2c2c2c', headerBg: 'rgba(240,235,225,0.98)', sidebarBg: 'rgba(242,237,228,0.98)', surface: 'rgba(0,0,0,0.03)', border: 'rgba(0,0,0,0.08)', muted: '#8b8578', inputBg: 'rgba(0,0,0,0.04)', hover: 'rgba(0,0,0,0.05)' },
+  { name: '纯黑', bg: '#000000', color: '#cccccc', headerBg: 'rgba(8,8,8,0.95)', sidebarBg: 'rgba(10,10,10,0.95)', surface: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.06)', muted: '#666666', inputBg: 'rgba(5,5,5,0.8)', hover: 'rgba(255,255,255,0.06)' },
+] as const
+
+export default function App() {
+  const [view, setView] = useState<AppView>('home')
+  const [showSettings, setShowSettings] = useState(false)
+
+  // Book state
+  const [bookData, setBookData] = useState<ArrayBuffer | null>(null)
+  const [bookId, setBookId] = useState<string>('')
+  const [bookTitle, setBookTitle] = useState<string>('')
+  const [initialLocation, setInitialLocation] = useState<string | undefined>(undefined)
+
+  // Reading state
+  const [character, setCharacter] = useState<Character | null>(null)
+  const [readingMode, setReadingMode] = useState<ReadingMode>('thinking')
+  const [selectedText, setSelectedText] = useState<string | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [opinionCards, setOpinionCards] = useState<OpinionCard[]>([])
+
+  // Chapter context
+  const [chapterIndex, setChapterIndex] = useState(0)
+  const [chapterTitle, setChapterTitle] = useState('')
+  const [chapterContent, setChapterContent] = useState('')
+  const [chapterHref, setChapterHref] = useState('')
+  const [previousSummaries] = useState<string[]>([])
+  const [tocList, setTocList] = useState<NavItem[]>([])
+  const [showToc, setShowToc] = useState(false)
+  const [readerHandle, setReaderHandle] = useState<ReaderHandle | null>(null)
+
+  // Pre-read
+  const [preReadData, setPreReadData] = useState<PreReadData[]>([])
+  const [preReading, setPreReading] = useState(false)
+  const [preReadProgress, setPreReadProgress] = useState('')
+  const [showPreRead, setShowPreRead] = useState(false)
+
+  // Highlights
+  const [highlights, setHighlights] = useState<Highlight[]>([])
+  const [selectedCfi, setSelectedCfi] = useState<string>('')
+  const [showAnnotation, setShowAnnotation] = useState(false)
+  const [annotationText, setAnnotationText] = useState('')
+
+  const sidebarRef = useRef<SidebarHandle>(null)
+
+  // Character switch
+  const [showSwitchDialog, setShowSwitchDialog] = useState(false)
+
+  // Bookshelf refresh key
+  const [bookshelfKey, setBookshelfKey] = useState(0)
+
+  // Character gallery
+  const [showCharGallery, setShowCharGallery] = useState(false)
+
+  // Reader theme
+  const [readerTheme, setReaderTheme] = useState<{ bg: string; color: string; fontFamily: string; fontSize: string }>({
+    bg: '#13132a', color: '#e0e0e0', fontFamily: '"Noto Serif SC", "Source Han Serif", Georgia, serif', fontSize: '17px',
+  })
+  const [showThemePicker, setShowThemePicker] = useState(false)
+  const [themePresetIdx, setThemePresetIdx] = useState(0)
+
+  // Summary
+  const [summary, setSummary] = useState('')
+
+  // History
+  const [showHistory, setShowHistory] = useState(false)
+  const [viewingSession, setViewingSession] = useState<{ idx: number; characterName: string; timestamp: number } | null>(null)
+  // Saved current session when viewing history
+  const savedSessionRef = useRef<{ messages: Message[]; opinionCards: OpinionCard[] } | null>(null)
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const bookDataRef = useRef<ArrayBuffer | null>(null)
+
+  // ===== Auto-save messages and opinionCards to IndexedDB =====
+  const bookIdRef = useRef<string>('')
+  bookIdRef.current = bookId
+
+  useEffect(() => {
+    if (!bookIdRef.current || view !== 'reading') return
+    const id = bookIdRef.current
+    // Save to localStorage (existing behavior)
+    const state = getBookState(id)
+    if (state) {
+      state.messages = messages
+      saveBookState(id, state)
+      // Also persist to IndexedDB
+      updateBookState(id, state).catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages])
+
+  useEffect(() => {
+    if (!bookIdRef.current || view !== 'reading') return
+    const id = bookIdRef.current
+    const state = getBookState(id)
+    if (state) {
+      state.opinionCards = opinionCards
+      saveBookState(id, state)
+      updateBookState(id, state).catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opinionCards])
+
+  // ===== File handling for new book =====
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!getLLMConfig()?.apiKey) {
+      setShowSettings(true)
+      return
+    }
+
+    const title = file.name.replace(/\.[^.]+$/, '')
+    const id = title + '_' + Date.now().toString(36)
+    setBookId(id)
+    setBookTitle(title)
+    setInitialLocation(undefined)
+
+    file.arrayBuffer().then(async buffer => {
+      // Store the original buffer
+      bookDataRef.current = buffer
+
+      // Extract cover
+      const cover = await extractCoverFromEpub(buffer.slice(0))
+
+      // Extract metadata from epub
+      let author = ''
+      try {
+        const tempBook = ePub(buffer.slice(0) as unknown as string)
+        await tempBook.ready
+        const meta = await tempBook.loaded.metadata
+        author = meta.creator || ''
+        tempBook.destroy()
+      } catch { /* ignore */ }
+
+      // Create initial book state
+      const newState: BookState = {
+        meta: { title, author, cover, totalChapters: 0 },
+        currentLocation: '',
+        currentChapter: 0,
+        characterId: '',
+        readingMode: 'thinking',
+        messages: [],
+        opinionCards: [],
+        chapterSummaries: {},
+        highlights: [],
+        preReadData: [],
+      }
+
+      // Save to IndexedDB
+      const storedBook: StoredBook = {
+        id,
+        title,
+        author,
+        cover,
+        epubData: buffer,
+        bookState: newState,
+        lastOpened: Date.now(),
+      }
+      await saveBook(storedBook)
+
+      // Also save to localStorage for compatibility
+      saveBookState(id, newState)
+
+      // Give Reader a clone of the buffer (original stays intact)
+      setBookData(buffer.slice(0))
+      setView('character-select')
+    })
+
+    // Reset file input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  // ===== Open book from bookshelf =====
+  async function handleSelectBook(stored: StoredBook) {
+    if (!getLLMConfig()?.apiKey) {
+      setShowSettings(true)
+      return
+    }
+
+    setBookId(stored.id)
+    setBookTitle(stored.title)
+    bookDataRef.current = stored.epubData
+
+    // Restore state
+    const state = stored.bookState
+    saveBookState(stored.id, state) // sync to localStorage
+
+    if (state.characterId && state.readingMode) {
+      // Has character + mode -> go directly to reading
+      setMessages(state.messages || [])
+      setOpinionCards(state.opinionCards || [])
+      setPreReadData(state.preReadData || [])
+      setHighlights(state.highlights || [])
+      setSummary(state.summary || '')
+      setReadingMode(state.readingMode)
+      setInitialLocation(state.currentLocation || undefined)
+
+      // Need to reconstruct Character object - use characterId
+      // We'll set character via the select screen for simplicity
+      // unless we can look it up
+      const { PRESET_CHARACTERS } = await import('./characters/presets')
+      const { getCustomCharacters } = await import('./store')
+      const allChars = [...PRESET_CHARACTERS, ...getCustomCharacters()]
+      const found = allChars.find(c => c.id === state.characterId)
+
+      if (found) {
+        setCharacter(found)
+        setBookData(stored.epubData.slice(0))
+        setView('reading')
+        // Update lastOpened
+        stored.lastOpened = Date.now()
+        saveBook(stored).catch(() => {})
+        return
+      }
+    }
+
+    // No character selected yet, go to character select
+    setBookData(stored.epubData.slice(0))
+    setView('character-select')
+  }
+
+  // ===== Re-read with different character =====
+  async function handleRereadBook(stored: StoredBook) {
+    if (!getLLMConfig()?.apiKey) {
+      setShowSettings(true)
+      return
+    }
+
+    setBookId(stored.id)
+    setBookTitle(stored.title)
+    bookDataRef.current = stored.epubData
+
+    // Save current session to history
+    const state = stored.bookState
+    if (state.characterId && state.messages.length > 0) {
+      const { PRESET_CHARACTERS } = await import('./characters/presets')
+      const { getCustomCharacters } = await import('./store')
+      const allChars = [...PRESET_CHARACTERS, ...getCustomCharacters()]
+      const charName = allChars.find(c => c.id === state.characterId)?.name || state.characterId
+
+      const session: ReadingSession = {
+        characterId: state.characterId,
+        characterName: charName,
+        readingMode: state.readingMode,
+        messages: [...state.messages],
+        opinionCards: [...state.opinionCards],
+        timestamp: Date.now(),
+      }
+      const sessions = state.sessions || []
+      sessions.push(session)
+      state.sessions = sessions
+    }
+
+    // Clear current session but keep highlights/preread/location
+    state.characterId = ''
+    state.messages = []
+    state.opinionCards = []
+    saveBookState(stored.id, state)
+    updateBookState(stored.id, state).catch(() => {})
+
+    setMessages([])
+    setOpinionCards([])
+    setPreReadData(state.preReadData || [])
+    setHighlights(state.highlights || [])
+    setInitialLocation(state.currentLocation || undefined)
+    setBookData(stored.epubData.slice(0))
+    setView('character-select')
+  }
+
+  function handleAddBook() {
+    if (!getLLMConfig()?.apiKey) {
+      setShowSettings(true)
+      return
+    }
+    fileInputRef.current?.click()
+  }
+
+  function handleCharacterSelected(char: Character, mode: ReadingMode) {
+    setCharacter(char)
+    setReadingMode(mode)
+
+    const existing = getBookState(bookId)
+    if (existing) {
+      // Restore existing messages if any, update character/mode
+      setMessages(existing.messages)
+      setOpinionCards(existing.opinionCards)
+      setPreReadData(existing.preReadData || [])
+      setHighlights(existing.highlights || [])
+      setSummary(existing.summary || '')
+      existing.characterId = char.id
+      existing.readingMode = mode
+      saveBookState(bookId, existing)
+      updateBookState(bookId, existing).catch(() => {})
+    } else {
+      const newState: BookState = {
+        meta: { title: bookTitle, author: '', totalChapters: 0 },
+        currentLocation: '',
+        currentChapter: 0,
+        characterId: char.id,
+        readingMode: mode,
+        messages: [],
+        opinionCards: [],
+        chapterSummaries: {},
+        highlights: [],
+        preReadData: [],
+      }
+      saveBookState(bookId, newState)
+      updateBookState(bookId, newState).catch(() => {})
+    }
+
+    setView('reading')
+  }
+
+  const handleTextSelected = useCallback((text: string, cfiRange: string) => {
+    setSelectedText(text)
+    setSelectedCfi(cfiRange)
+  }, [])
+
+  const handleChapterChange = useCallback((index: number, title: string, content: string, href: string) => {
+    setChapterIndex(index)
+    setChapterTitle(title)
+    setChapterContent(content)
+    setChapterHref(href)
+  }, [])
+
+  const handleBookLoaded = useCallback((_title: string, author: string, _toc: NavItem[]) => {
+    setBookTitle(prev => prev || _title)
+    setTocList(_toc)
+    const state = getBookState(bookId)
+    if (state) {
+      state.meta.title = _title || state.meta.title
+      state.meta.author = author
+      saveBookState(bookId, state)
+      updateBookState(bookId, state).catch(() => {})
+    }
+  }, [bookId])
+
+  // ===== Save reading position on location change =====
+  const handleLocationChange = useCallback((location: string) => {
+    if (!bookId) return
+    const state = getBookState(bookId)
+    if (state) {
+      state.currentLocation = location
+      saveBookState(bookId, state)
+      // Also save to IndexedDB
+      updateBookLocation(bookId, location).catch(() => {})
+    }
+  }, [bookId])
+
+  // ===== Selection Action Bar =====
+  function handleActionRead() {
+    if (!selectedText) return
+    sidebarRef.current?.triggerAI(selectedText)
+    setSelectedText(null)
+    setSelectedCfi('')
+  }
+
+  function handleActionHighlight() {
+    handleAddHighlight()
+    setSelectedText(null)
+    setSelectedCfi('')
+  }
+
+  function handleActionAnnotate() {
+    setShowAnnotation(true)
+  }
+
+  function handleSaveAnnotation() {
+    if (!selectedText || !selectedCfi) return
+    const h: Highlight = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+      cfiRange: selectedCfi,
+      text: selectedText,
+      note: annotationText,
+      color: 'rgba(147, 130, 255, 0.3)',
+      chapterIndex,
+      timestamp: Date.now(),
+    }
+    readerHandle?.addHighlight(selectedCfi, h.color)
+    const updated = [...highlights, h]
+    setHighlights(updated)
+    const state = getBookState(bookId)
+    if (state) {
+      state.highlights = updated
+      saveBookState(bookId, state)
+      updateBookState(bookId, state).catch(() => {})
+    }
+    setSelectedText(null)
+    setSelectedCfi('')
+    setAnnotationText('')
+    setShowAnnotation(false)
+  }
+
+  function handleDismissSelection() {
+    setSelectedText(null)
+    setSelectedCfi('')
+    setShowAnnotation(false)
+    setAnnotationText('')
+  }
+
+  // ===== Highlight =====
+  function handleAddHighlight(color = 'rgba(255, 223, 0, 0.3)') {
+    if (!selectedText || !selectedCfi) return
+    const h: Highlight = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+      cfiRange: selectedCfi,
+      text: selectedText,
+      note: '',
+      color,
+      chapterIndex,
+      timestamp: Date.now(),
+    }
+    readerHandle?.addHighlight(selectedCfi, color)
+    const updated = [...highlights, h]
+    setHighlights(updated)
+    // Save
+    const state = getBookState(bookId)
+    if (state) {
+      state.highlights = updated
+      saveBookState(bookId, state)
+      updateBookState(bookId, state).catch(() => {})
+    }
+  }
+
+  // Auto-save highlights
+  useEffect(() => {
+    if (!bookIdRef.current || view !== 'reading') return
+    const id = bookIdRef.current
+    const state = getBookState(id)
+    if (state) {
+      state.highlights = highlights
+      saveBookState(id, state)
+      updateBookState(id, state).catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlights])
+
+  // Auto-save summary
+  useEffect(() => {
+    if (!bookIdRef.current || view !== 'reading' || !summary) return
+    const id = bookIdRef.current
+    const state = getBookState(id)
+    if (state) {
+      state.summary = summary
+      saveBookState(id, state)
+      updateBookState(id, state).catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary])
+
+  // ===== AI Pre-read =====
+  // 用JSZip直接解压epub，读取所有HTML/XHTML文件的纯文本
+  async function extractAllChaptersText(data: ArrayBuffer): Promise<Array<{ index: number; href: string; label: string; text: string }>> {
+    const zip = await JSZip.loadAsync(data.slice(0))
+    const chapters: Array<{ index: number; href: string; label: string; text: string }> = []
+
+    // 先解析 container.xml 找到 opf 文件
+    const containerXml = await zip.file('META-INF/container.xml')?.async('text')
+    let opfPath = ''
+    if (containerXml) {
+      const match = containerXml.match(/full-path="([^"]+)"/)
+      if (match) opfPath = match[1]
+    }
+
+    // 解析 opf 找到 spine 顺序和 manifest
+    let spineOrder: string[] = []
+    const manifest: Record<string, { href: string; mediaType: string }> = {}
+    let opfDir = ''
+
+    if (opfPath) {
+      opfDir = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : ''
+      const opfXml = await zip.file(opfPath)?.async('text')
+      if (opfXml) {
+        // 解析 manifest
+        const manifestRegex = /<item\s[^>]*id="([^"]*)"[^>]*href="([^"]*)"[^>]*media-type="([^"]*)"[^>]*\/?>/g
+        let m
+        while ((m = manifestRegex.exec(opfXml)) !== null) {
+          manifest[m[1]] = { href: m[2], mediaType: m[3] }
+        }
+        // 也匹配属性顺序不同的情况
+        const manifestRegex2 = /<item\s[^>]*href="([^"]*)"[^>]*id="([^"]*)"[^>]*media-type="([^"]*)"[^>]*\/?>/g
+        while ((m = manifestRegex2.exec(opfXml)) !== null) {
+          if (!manifest[m[2]]) {
+            manifest[m[2]] = { href: m[1], mediaType: m[3] }
+          }
+        }
+
+        // 解析 spine
+        const spineRegex = /<itemref\s[^>]*idref="([^"]*)"[^>]*\/?>/g
+        while ((m = spineRegex.exec(opfXml)) !== null) {
+          spineOrder.push(m[1])
+        }
+      }
+    }
+
+    // 如果解析不到spine，直接按文件名找所有html/xhtml
+    if (spineOrder.length === 0) {
+      const htmlFiles: string[] = []
+      zip.forEach((path, file) => {
+        if (!file.dir && (path.endsWith('.html') || path.endsWith('.xhtml') || path.endsWith('.htm'))) {
+          htmlFiles.push(path)
+        }
+      })
+      htmlFiles.sort()
+      for (let i = 0; i < htmlFiles.length; i++) {
+        try {
+          const html = await zip.file(htmlFiles[i])?.async('text')
+          if (html) {
+            const doc = new DOMParser().parseFromString(html, 'text/html')
+            const text = doc.body?.innerText || ''
+            if (text.trim().length > 30) {
+              chapters.push({ index: i, href: htmlFiles[i], label: `第${i + 1}节`, text: text.trim() })
+            }
+          }
+        } catch { /* skip */ }
+      }
+    } else {
+      // 按spine顺序读取
+      // 同时试图获取toc匹配标题
+      const tocLabels: Record<string, string> = {}
+      for (const t of tocList) {
+        const href = t.href.split('#')[0]
+        tocLabels[href] = t.label?.trim() || ''
+      }
+
+      for (let i = 0; i < spineOrder.length; i++) {
+        const itemId = spineOrder[i]
+        const item = manifest[itemId]
+        if (!item) continue
+        if (!item.mediaType.includes('html') && !item.mediaType.includes('xml')) continue
+
+        const fullPath = opfDir + item.href
+        try {
+          const html = await zip.file(fullPath)?.async('text')
+          if (!html) continue
+          const doc = new DOMParser().parseFromString(html, 'text/html')
+          const text = doc.body?.innerText || ''
+          if (text.trim().length > 30) {
+            // 匹配toc标题
+            let label = tocLabels[item.href] || tocLabels[fullPath] || ''
+            if (!label) {
+              for (const [href, lbl] of Object.entries(tocLabels)) {
+                if (item.href.includes(href) || href.includes(item.href) || fullPath.includes(href) || href.includes(fullPath)) {
+                  label = lbl
+                  break
+                }
+              }
+            }
+            chapters.push({
+              index: i,
+              href: item.href,
+              label: label || `第${i + 1}节`,
+              text: text.trim(),
+            })
+          }
+        } catch (err) {
+          console.warn(`Extract ${fullPath} failed:`, err)
+        }
+      }
+    }
+
+    console.log(`JSZip extracted ${chapters.length} chapters, spine had ${spineOrder.length} items`)
+    return chapters
+  }
+
+  async function handlePreRead(mode: 'current' | 'all') {
+    const config = getLLMConfig()
+    if (!config || !bookDataRef.current) {
+      setPreReadProgress('错误：没有API配置或书籍数据')
+      return
+    }
+
+    setPreReading(true)
+    setPreReadProgress('正在提取章节内容...')
+    const results: PreReadData[] = [...preReadData]
+
+    try {
+      // 一次性提取所有章节文本
+      const allSpineItems = await extractAllChaptersText(bookDataRef.current)
+      console.log(`Extracted ${allSpineItems.length} spine items from epub`)
+
+      if (allSpineItems.length === 0) {
+        setPreReadProgress('无法从epub中提取文本内容')
+        setTimeout(() => { setPreReading(false); setPreReadProgress('') }, 2000)
+        return
+      }
+
+      // 用目录过滤出真正的"章节"（而非扉页、版权页等）
+      // 如果有目录，只预读目录中列出的章节
+      let chapters = allSpineItems
+      if (tocList.length > 0) {
+        const tocChapters: typeof allSpineItems = []
+        for (const toc of tocList) {
+          const tocHref = toc.href.split('#')[0]
+          const matched = allSpineItems.find(s => {
+            const sHref = s.href.split('#')[0]
+            return sHref === tocHref || sHref.endsWith('/' + tocHref) || tocHref.endsWith('/' + sHref) || sHref.includes(tocHref) || tocHref.includes(sHref)
+          })
+          if (matched && !tocChapters.find(c => c.href === matched.href)) {
+            tocChapters.push({ ...matched, label: toc.label?.trim() || matched.label })
+          }
+        }
+        if (tocChapters.length > 0) {
+          chapters = tocChapters
+          console.log(`Filtered to ${chapters.length} TOC chapters from ${allSpineItems.length} spine items`)
+        }
+      }
+
+      if (mode === 'current') {
+        // 预读当前章：用 href 匹配当前阅读位置
+        const curHref = chapterHref.split('#')[0]
+        const target = chapters.find(c => {
+          const cHref = c.href.split('#')[0]
+          return cHref === curHref || cHref.endsWith('/' + curHref) || curHref.endsWith('/' + cHref) || cHref.includes(curHref) || curHref.includes(cHref)
+        }) || chapters[0]
+
+        console.log(`Pre-read matching: chapterHref="${chapterHref}", matched href="${target.href}", label="${target.label}"`)
+
+        if (results.find(r => r.href === target.href)) {
+          setPreReadProgress(`"${target.label}" 已预读过`)
+          setTimeout(() => { setPreReading(false); setPreReadProgress('') }, 1500)
+          return
+        }
+
+        setPreReadProgress(`正在预读：${target.label}`)
+        const summary = await chatCompletion(config, [
+          { role: 'system', content: '你是一个精确的文本概括助手。只输出概要，不评论。' },
+          { role: 'user', content: buildPreReadPrompt(target.label, target.text.slice(0, 8000)) },
+        ])
+        results.push({ chapterIndex: target.index, href: target.href, label: target.label, summary })
+      } else {
+        // 预读全部（只读目录中的章节）
+        setPreReadProgress(`发现 ${chapters.length} 个章节，开始预读...`)
+        for (let i = 0; i < chapters.length; i++) {
+          const ch = chapters[i]
+          if (results.find(r => r.href === ch.href)) continue
+
+          setPreReadProgress(`预读中 (${i + 1}/${chapters.length})：${ch.label}`)
+
+          try {
+            const summary = await chatCompletion(config, [
+              { role: 'system', content: '你是一个精确的文本概括助手。用200字以内概括核心情节和关键信息。只输出概要，不评论。' },
+              { role: 'user', content: buildPreReadPrompt(ch.label, ch.text.slice(0, 8000)) },
+            ])
+            results.push({ chapterIndex: ch.index, href: ch.href, label: ch.label, summary })
+          } catch (err) {
+            console.warn(`Pre-read chapter "${ch.label}" failed:`, err)
+          }
+        }
+      }
+
+      // 保存
+      setPreReadData(results)
+      const state = getBookState(bookId)
+      if (state) {
+        state.preReadData = results
+        saveBookState(bookId, state)
+        updateBookState(bookId, state).catch(() => {})
+      }
+      setPreReadProgress(`预读完成！共${results.length}章记忆`)
+      setTimeout(() => setPreReadProgress(''), 3000)
+    } catch (err) {
+      console.error('Pre-read error:', err)
+      setPreReadProgress(`预读出错：${err instanceof Error ? err.message : '未知错误'}`)
+    } finally {
+      setPreReading(false)
+    }
+  }
+
+  // ===== Character Switch =====
+  function handleSwitchCharacter() {
+    setShowSwitchDialog(true)
+  }
+
+  function confirmSwitchCharacter() {
+    if (!character || !bookId) return
+    // Save current session to history
+    const state = getBookState(bookId)
+    if (state) {
+      const session: ReadingSession = {
+        characterId: character.id,
+        characterName: character.name,
+        readingMode,
+        messages: [...messages],
+        opinionCards: [...opinionCards],
+        timestamp: Date.now(),
+      }
+      const sessions = state.sessions || []
+      sessions.push(session)
+      state.sessions = sessions
+      state.characterId = ''
+      state.messages = []
+      state.opinionCards = []
+      saveBookState(bookId, state)
+      updateBookState(bookId, state).catch(() => {})
+    }
+    // Reset current session and go to character select
+    setMessages([])
+    setOpinionCards([])
+    setCharacter(null)
+    setShowSwitchDialog(false)
+    setView('character-select')
+  }
+
+  // ===== History viewing =====
+  function handleViewSession(sessionIdx: number) {
+    const sessions = getBookState(bookId)?.sessions || []
+    const session = sessions[sessionIdx]
+    if (!session) return
+    // Save current state
+    savedSessionRef.current = { messages: [...messages], opinionCards: [...opinionCards] }
+    // Load history
+    setMessages(session.messages)
+    setOpinionCards(session.opinionCards)
+    setViewingSession({ idx: sessionIdx, characterName: session.characterName, timestamp: session.timestamp })
+    setShowHistory(false)
+  }
+
+  function handleExitHistory() {
+    if (savedSessionRef.current) {
+      setMessages(savedSessionRef.current.messages)
+      setOpinionCards(savedSessionRef.current.opinionCards)
+      savedSessionRef.current = null
+    }
+    setViewingSession(null)
+  }
+
+  // ===== Export =====
+  function exportToMarkdown() {
+    const lines: string[] = []
+    lines.push(`# 《${bookTitle}》阅读笔记\n`)
+    if (character) lines.push(`**伴读角色**: ${character.name}（${character.label}）\n`)
+    lines.push(`**导出时间**: ${new Date().toLocaleString('zh-CN')}\n`)
+
+    // Highlights
+    if (highlights.length > 0) {
+      lines.push(`\n## 高亮与批注\n`)
+      highlights.forEach(h => {
+        lines.push(`> "${h.text}"\n`)
+        if (h.note) lines.push(`**批注**: ${h.note}\n`)
+        lines.push('')
+      })
+    }
+
+    // Opinion cards
+    const agreed = opinionCards.filter(c => c.userStance === 'agree')
+    const disagreed = opinionCards.filter(c => c.userStance === 'disagree')
+    if (opinionCards.length > 0) {
+      lines.push(`\n## 观点库\n`)
+      if (agreed.length > 0) {
+        lines.push(`### 认同的观点\n`)
+        agreed.forEach(c => {
+          lines.push(`> "${c.selectedText}"\n`)
+          lines.push(`**${c.characterName}**: ${c.opinion}\n`)
+        })
+      }
+      if (disagreed.length > 0) {
+        lines.push(`### 不认同的观点\n`)
+        disagreed.forEach(c => {
+          lines.push(`> "${c.selectedText}"\n`)
+          lines.push(`**${c.characterName}**: ${c.opinion}\n`)
+        })
+      }
+    }
+
+    // Chat highlights
+    const charMsgs = messages.filter(m => m.role === 'character' && m.content)
+    if (charMsgs.length > 0) {
+      lines.push(`\n## 对话精选\n`)
+      charMsgs.slice(-20).forEach(m => {
+        if (m.selectedText) lines.push(`> "${m.selectedText}"\n`)
+        lines.push(`**${character?.name || 'AI'}**: ${m.content}\n`)
+      })
+    }
+
+    const md = lines.join('\n')
+    downloadFile(md, `${bookTitle}_阅读笔记.md`, 'text/markdown')
+  }
+
+  function exportToPDF() {
+    // Generate HTML and use print dialog
+    const lines: string[] = []
+    lines.push(`<html><head><meta charset="utf-8"><title>${bookTitle} 阅读笔记</title>`)
+    lines.push(`<style>body{font-family:-apple-system,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;color:#333;line-height:1.8}h1{border-bottom:2px solid #6c63ff;padding-bottom:8px}h2{color:#6c63ff;margin-top:32px}h3{color:#555}blockquote{border-left:3px solid #6c63ff;padding-left:12px;color:#666;font-style:italic;margin:12px 0}strong{color:#222}.card{background:#f5f5f5;border-radius:8px;padding:12px;margin:8px 0}</style>`)
+    lines.push(`</head><body>`)
+    lines.push(`<h1>${bookTitle} 阅读笔记</h1>`)
+    if (character) lines.push(`<p><strong>伴读角色</strong>: ${character.name}（${character.label}）</p>`)
+
+    if (highlights.length > 0) {
+      lines.push(`<h2>高亮与批注</h2>`)
+      highlights.forEach(h => {
+        lines.push(`<blockquote>${h.text}</blockquote>`)
+        if (h.note) lines.push(`<p><strong>批注</strong>: ${h.note}</p>`)
+      })
+    }
+
+    if (opinionCards.length > 0) {
+      lines.push(`<h2>观点库</h2>`)
+      opinionCards.forEach(c => {
+        lines.push(`<div class="card"><blockquote>${c.selectedText}</blockquote>`)
+        lines.push(`<p><strong>${c.characterName}</strong>: ${c.opinion}</p>`)
+        if (c.userStance) lines.push(`<p style="color:${c.userStance === 'agree' ? 'green' : c.userStance === 'disagree' ? 'red' : '#999'}">${c.userStance === 'agree' ? '已认同' : c.userStance === 'disagree' ? '不认同' : 'skipped'}</p>`)
+        lines.push(`</div>`)
+      })
+    }
+
+    lines.push(`</body></html>`)
+    const html = lines.join('\n')
+    const win = window.open('', '_blank')
+    if (win) {
+      win.document.write(html)
+      win.document.close()
+      setTimeout(() => win.print(), 500)
+    }
+  }
+
+  function downloadFile(content: string, filename: string, type: string) {
+    const blob = new Blob([content], { type })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleBack() {
+    // Save final state before going back
+    if (bookId) {
+      const state = getBookState(bookId)
+      if (state) {
+        state.messages = messages
+        state.opinionCards = opinionCards
+        state.preReadData = preReadData
+        state.highlights = highlights
+        saveBookState(bookId, state)
+        updateBookState(bookId, state).catch(() => {})
+      }
+    }
+
+    setView('bookshelf')
+    setCharacter(null)
+    setMessages([])
+    setOpinionCards([])
+    setSelectedText(null)
+    setSelectedCfi('')
+    setBookData(null)
+    setPreReadData([])
+    setHighlights([])
+    setSummary('')
+    setInitialLocation(undefined)
+    setViewingSession(null)
+    savedSessionRef.current = null
+    bookDataRef.current = null
+    setBookshelfKey(k => k + 1) // refresh bookshelf
+  }
+
+  return (
+    <div className="app">
+      {view === 'home' && (
+        <>
+          <div className="home">
+            <div className="home-content">
+              <h1 className="home-title">Marginalia</h1>
+              <div className="home-title-line" />
+              <p className="home-subtitle">自定义角色卡伴读，在交互中收获观点碰撞</p>
+
+              <div className="home-cards">
+                {/* 1. API 配置 */}
+                <div className="home-card" onClick={() => setShowSettings(true)}>
+                  <div className="home-card-icon api">&#9889;</div>
+                  <div className="home-card-title">API 配置</div>
+                  {getLLMConfig()?.apiKey ? (
+                    <span className="home-card-status done">已配置</span>
+                  ) : (
+                    <span className="home-card-status pending">未配置</span>
+                  )}
+                  <div className="home-card-desc">
+                    {getLLMConfig()?.apiKey
+                      ? `${getLLMConfig()?.provider === 'claude' ? 'Claude' : getLLMConfig()?.provider === 'openai' ? 'OpenAI' : '自定义'}`
+                      : '配置大模型 API'}
+                  </div>
+                  <div className="home-card-action">点击配置 &rarr;</div>
+                </div>
+
+                {/* 2. 角色库 */}
+                <div className="home-card" onClick={() => setShowCharGallery(true)}>
+                  <div className="home-card-icon chars">&#128101;</div>
+                  <div className="home-card-title">角色库</div>
+                  <span className="home-card-status done">{PRESET_CHARACTERS.length} 个角色</span>
+                  <div className="home-card-desc">浏览预置伴读角色</div>
+                  <div className="home-card-action">点击查看 &rarr;</div>
+                </div>
+
+                {/* 3. 导入书籍 */}
+                <div className="home-card" onClick={() => setView('bookshelf')}>
+                  <div className="home-card-icon books">&#128218;</div>
+                  <div className="home-card-title">导入书籍</div>
+                  <div className="home-card-desc">导入 epub 电子书开始阅读</div>
+                  <div className="home-card-action">进入书架 &rarr;</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 角色库浮层 */}
+          {showCharGallery && (
+            <div className="char-gallery-overlay" onClick={() => setShowCharGallery(false)}>
+              <div className="char-gallery" onClick={e => e.stopPropagation()}>
+                <div className="char-gallery-header">
+                  <h2>角色库</h2>
+                  <button className="char-gallery-close" onClick={() => setShowCharGallery(false)}>&#10005;</button>
+                </div>
+                <p className="char-gallery-hint">预置角色不可编辑。导入书籍后可选择角色开始共读。</p>
+                <div className="char-gallery-list">
+                  {PRESET_CHARACTERS.map(c => (
+                    <div key={c.id} className="char-gallery-item">
+                      <div className="char-gallery-avatar">{c.avatar}</div>
+                      <div className="char-gallery-info">
+                        <div className="char-gallery-name">{c.name}</div>
+                        <span className="char-gallery-label">{c.label}</span>
+                        <div className="char-gallery-desc">{c.description}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".epub"
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+        </>
+      )}
+
+      {view === 'bookshelf' && (
+        <>
+          <Bookshelf
+            key={bookshelfKey}
+            onSelectBook={handleSelectBook}
+            onRereadBook={handleRereadBook}
+            onAddBook={handleAddBook}
+            onOpenSettings={() => setShowSettings(true)}
+            onBack={() => setView('home')}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".epub"
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+        </>
+      )}
+
+      {view === 'character-select' && (
+        <CharacterSelect
+          onSelect={handleCharacterSelected}
+          bookTitle={bookTitle}
+        />
+      )}
+
+      {view === 'reading' && character && bookData && (
+        <div className="reading-layout" style={{
+          '--t-bg': THEME_PRESETS[themePresetIdx].bg,
+          '--t-color': THEME_PRESETS[themePresetIdx].color,
+          '--t-header': THEME_PRESETS[themePresetIdx].headerBg,
+          '--t-sidebar': THEME_PRESETS[themePresetIdx].sidebarBg,
+          '--t-surface': THEME_PRESETS[themePresetIdx].surface,
+          '--t-border': THEME_PRESETS[themePresetIdx].border,
+          '--t-muted': THEME_PRESETS[themePresetIdx].muted,
+          '--t-input': THEME_PRESETS[themePresetIdx].inputBg,
+          '--t-hover': THEME_PRESETS[themePresetIdx].hover,
+        } as React.CSSProperties}>
+          <div className="reading-header">
+            <div className="header-group-left">
+              <button className="back-btn" onClick={handleBack} title="返回书架">&#8592;</button>
+              <button className="header-btn" onClick={() => setShowToc(!showToc)} title="目录">&#9776;</button>
+              <div className="header-nav-group">
+                <button className="header-btn nav-btn" onClick={() => readerHandle?.prev()} title="上一章">&#9664;</button>
+                <button className="header-btn nav-btn" onClick={() => readerHandle?.next()} title="下一章">&#9654;</button>
+              </div>
+            </div>
+            <span className="reading-title">《{bookTitle}》</span>
+            <div className="header-group-right">
+              <span className="reading-mode-tag" title={readingMode === 'thinking' ? '当前模式：AI会深入分析文本含义' : '当前模式：AI会从写作技巧角度评析'}>
+                {readingMode === 'thinking' ? '深度思考' : '写作学习'}
+              </span>
+              <button
+                className={`header-btn ${preReadData.length > 0 ? 'preread-btn has-data' : ''}`}
+                onClick={() => setShowPreRead(!showPreRead)}
+                disabled={preReading}
+                title="AI预读"
+              >
+                {preReading ? '...' : `预读${preReadData.length > 0 ? `(${preReadData.length})` : ''}`}
+              </button>
+              <button className="header-btn" onClick={() => setShowThemePicker(!showThemePicker)} title="阅读主题">Aa</button>
+              <button className="header-btn" onClick={() => setShowHistory(true)} title="历史记录">&#128337;</button>
+              <button className="header-btn" onClick={handleSwitchCharacter} title="切换角色">&#128101;</button>
+              <button className="header-btn" onClick={() => setShowSettings(true)} title="设置">&#9881;</button>
+            </div>
+          </div>
+
+          {/* Theme picker */}
+          {showThemePicker && (
+            <div className="theme-picker-panel">
+              <div className="theme-picker-section">
+                <div className="theme-picker-label">背景</div>
+                <div className="theme-picker-row">
+                  {THEME_PRESETS.map((t, i) => (
+                    <div
+                      key={t.name}
+                      className={`theme-swatch-wrap ${themePresetIdx === i ? 'active' : ''}`}
+                      onClick={() => { setThemePresetIdx(i); setReaderTheme(prev => ({ ...prev, bg: t.bg, color: t.color })) }}
+                    >
+                      <div className="theme-swatch-circle" style={{ background: t.bg, borderColor: themePresetIdx === i ? '#6366f1' : 'rgba(255,255,255,0.15)' }} />
+                      <span className="theme-swatch-name">{t.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="theme-picker-section">
+                <div className="theme-picker-label">字体</div>
+                <div className="theme-picker-row">
+                  {[
+                    { name: '衬线', family: '"Noto Serif SC", "Source Han Serif", Georgia, serif' },
+                    { name: '无衬线', family: '-apple-system, "Noto Sans SC", "PingFang SC", sans-serif' },
+                    { name: '楷体', family: '"Kaiti SC", "STKaiti", KaiTi, serif' },
+                  ].map(f => (
+                    <button
+                      key={f.name}
+                      className={`theme-font-btn ${readerTheme.fontFamily === f.family ? 'active' : ''}`}
+                      onClick={() => setReaderTheme(prev => ({ ...prev, fontFamily: f.family }))}
+                    >
+                      {f.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="theme-picker-section">
+                <div className="theme-picker-label">字号</div>
+                <div className="font-size-control">
+                  <button
+                    className="font-size-btn"
+                    onClick={() => setReaderTheme(prev => ({ ...prev, fontSize: Math.max(12, parseInt(prev.fontSize) - 1) + 'px' }))}
+                  >
+                    A-
+                  </button>
+                  <span className="font-size-value">{parseInt(readerTheme.fontSize)}px</span>
+                  <input
+                    type="range"
+                    className="font-size-slider"
+                    min="12"
+                    max="28"
+                    value={parseInt(readerTheme.fontSize)}
+                    onChange={e => setReaderTheme(prev => ({ ...prev, fontSize: e.target.value + 'px' }))}
+                  />
+                  <button
+                    className="font-size-btn"
+                    onClick={() => setReaderTheme(prev => ({ ...prev, fontSize: Math.min(28, parseInt(prev.fontSize) + 1) + 'px' }))}
+                  >
+                    A+
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pre-read panel */}
+          {showPreRead && (
+            <div className="preread-panel">
+              <h3>AI预读</h3>
+              <p className="preread-desc">让AI提前阅读章节，理解剧情脉络。预读结果不会显示给你（防剧透），但AI回复时会关联剧情理解。</p>
+              <div className="preread-actions">
+                <button
+                  className="preread-action-btn"
+                  onClick={() => handlePreRead('current')}
+                  disabled={preReading}
+                >
+                  预读当前章
+                </button>
+                <button
+                  className="preread-action-btn"
+                  onClick={() => handlePreRead('all')}
+                  disabled={preReading}
+                >
+                  预读全部章节
+                </button>
+              </div>
+              {preReadProgress && <div className="preread-progress">{preReadProgress}</div>}
+              {preReadData.length > 0 && (
+                <div className="preread-list">
+                  <h4>已预读章节 ({preReadData.length})</h4>
+                  {preReadData.map(d => (
+                    <div key={d.href || d.chapterIndex} className="preread-item">
+                      {d.label || `第${d.chapterIndex + 1}章`} - {d.summary.slice(0, 50)}...
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {showToc && (
+            <div className="toc-panel">
+              <h3>目录</h3>
+              {tocList.map((item, i) => (
+                <div
+                  key={i}
+                  className="toc-item"
+                  onClick={() => { readerHandle?.goToChapter(item.href); setShowToc(false) }}
+                >
+                  {item.label}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 选中文字操作栏 */}
+          {selectedText && (
+            <div className="selection-bar">
+              <div className="selection-bar-text">"{selectedText.length > 60 ? selectedText.slice(0, 60) + '...' : selectedText}"</div>
+              <div className="selection-bar-actions">
+                <button className="sel-action-btn sel-read" onClick={handleActionRead}>伴读</button>
+                <button className="sel-action-btn sel-highlight" onClick={handleActionHighlight}>高亮</button>
+                <button className="sel-action-btn sel-annotate" onClick={handleActionAnnotate}>批注</button>
+                <button className="sel-action-btn sel-dismiss" onClick={handleDismissSelection}>×</button>
+              </div>
+              {showAnnotation && (
+                <div className="annotation-input-row">
+                  <input
+                    type="text"
+                    value={annotationText}
+                    onChange={e => setAnnotationText(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSaveAnnotation()}
+                    placeholder="写下你的批注..."
+                    autoFocus
+                  />
+                  <button onClick={handleSaveAnnotation}>保存</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="reading-body">
+            <Reader
+              bookData={bookData}
+              onTextSelected={handleTextSelected}
+              onChapterChange={handleChapterChange}
+              onBookLoaded={handleBookLoaded}
+              onReady={setReaderHandle}
+              initialLocation={initialLocation}
+              onLocationChange={handleLocationChange}
+              highlights={highlights}
+              tocList={tocList}
+              readerTheme={readerTheme}
+            />
+            <Sidebar
+              ref={sidebarRef as RefObject<SidebarHandle>}
+              character={character}
+              readingMode={readingMode}
+              chapterIndex={chapterIndex}
+              chapterTitle={chapterTitle}
+              chapterContent={chapterContent}
+              previousSummaries={previousSummaries}
+              preReadData={preReadData}
+              messages={messages}
+              opinionCards={opinionCards}
+              highlights={highlights}
+              bookId={bookId}
+              bookTitle={bookTitle}
+              summary={summary}
+              viewingHistory={viewingSession ? { characterName: viewingSession.characterName, timestamp: viewingSession.timestamp } : null}
+              onMessagesChange={setMessages}
+              onOpinionCardsChange={setOpinionCards}
+              onHighlightsChange={setHighlights}
+              onSummaryChange={setSummary}
+              onExitHistory={handleExitHistory}
+              onExportMD={exportToMarkdown}
+              onExportPDF={exportToPDF}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 切换角色确认弹窗 */}
+      {showSwitchDialog && (
+        <div className="dialog-overlay" onClick={() => setShowSwitchDialog(false)}>
+          <div className="dialog-box" onClick={e => e.stopPropagation()}>
+            <h3>切换角色</h3>
+            <p>确定要切换伴读角色吗？当前的聊天记录和观点会被保存到历史记录中。</p>
+            <div className="dialog-actions">
+              <button className="dialog-cancel" onClick={() => setShowSwitchDialog(false)}>取消</button>
+              <button className="dialog-confirm" onClick={confirmSwitchCharacter}>确定切换</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 历史记录弹窗 */}
+      {showHistory && (() => {
+        const sessions = getBookState(bookId)?.sessions || []
+        return (
+          <div className="dialog-overlay" onClick={() => setShowHistory(false)}>
+            <div className="history-dialog" onClick={e => e.stopPropagation()}>
+              <div className="history-header">
+                <h3>历史伴读记录</h3>
+                <button className="char-gallery-close" onClick={() => setShowHistory(false)}>&#10005;</button>
+              </div>
+              {sessions.length === 0 ? (
+                <div className="history-empty">暂无历史记录。切换角色后，之前的对话会保存在这里。</div>
+              ) : (
+                <div className="history-list">
+                  {sessions.map((s, i) => (
+                    <div key={i} className="history-item" onClick={() => handleViewSession(i)} style={{ cursor: 'pointer' }}>
+                      <div className="history-item-header">
+                        <span className="history-char-name">{s.characterName}</span>
+                        <span className="history-mode">{s.readingMode === 'thinking' ? '深度思考' : '写作学习'}</span>
+                        <span className="history-time">{new Date(s.timestamp).toLocaleDateString('zh-CN')}</span>
+                      </div>
+                      <div className="history-stats">
+                        {s.messages.length} 条对话 · {s.opinionCards.length} 个观点
+                      </div>
+                      {s.messages.filter(m => m.role === 'character' && m.content).slice(-2).map((m, j) => (
+                        <div key={j} className="history-preview">
+                          {m.content.slice(0, 100)}{m.content.length > 100 ? '...' : ''}
+                        </div>
+                      ))}
+                      <div className="history-action-hint">点击查看完整对话</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+    </div>
+  )
+}
