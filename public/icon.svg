@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#faf0ee"/>
+  <text x="256" y="290" text-anchor="middle"
+        font-family="Georgia, serif" font-size="80" font-style="italic"
+        font-weight="600" fill="#c87a8e">M</text>
+  <line x1="160" y1="340" x2="352" y2="340" stroke="#2d1620" stroke-width="2"/>
+  <text x="256" y="338" text-anchor="middle"
+        font-family="Georgia, serif" font-size="22" fill="#c87a8e">◆</text>
+</svg>
