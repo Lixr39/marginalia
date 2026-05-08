@@ -13,6 +13,8 @@ export {
   deleteHighlight,
   updateHighlightNote,
   setFeaturedHighlight,
+  addBookmark,
+  deleteBookmark,
 } from './db'
 export type { StoredBook } from './db'
 
