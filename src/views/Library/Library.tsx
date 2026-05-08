@@ -11,6 +11,7 @@ import {
   type StoredBook,
 } from '../../store'
 import { pickFeaturedHighlight } from '../../lib/featuredHighlight'
+import { normalizeEpub } from '../../lib/epubNormalize'
 import './Library.css'
 
 function formatIssueDate(d: Date): string {
@@ -128,7 +129,8 @@ export function Library() {
   const handleFile = useCallback(async (file: File) => {
     setImporting(true)
     try {
-      const buf = await file.arrayBuffer()
+      const rawBuf = await file.arrayBuffer()
+      const buf = await normalizeEpub(rawBuf)
       const cover = await extractCoverFromEpub(buf)
       const meta = await readEpubMeta(buf)
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)

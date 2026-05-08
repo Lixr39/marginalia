@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import { TabBar } from './components/shared/TabBar'
 import { Library } from './views/Library/Library'
+import { Reader } from './views/Reader/Reader'
 import './components/shared/shared.css'
 
 function Placeholder({ name }: { name: string }) {
@@ -29,7 +30,7 @@ export default function App() {
     <>
       <Routes>
         <Route path="/" element={<Library />} />
-        <Route path="/read/:bookId" element={<Placeholder name="Reader" />} />
+        <Route path="/read/:bookId" element={<Reader />} />
         <Route path="/voices" element={<Placeholder name="Voices" />} />
         <Route path="/stats" element={<Placeholder name="Stats" />} />
         <Route path="/setup" element={<Placeholder name="Setup" />} />

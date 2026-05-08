@@ -9,6 +9,10 @@ export {
   updateBookState,
   updateBookLocation,
   extractCoverFromEpub,
+  addHighlight,
+  deleteHighlight,
+  updateHighlightNote,
+  setFeaturedHighlight,
 } from './db'
 export type { StoredBook } from './db'
 

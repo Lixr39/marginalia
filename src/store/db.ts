@@ -87,6 +87,38 @@ export async function updateBookLocation(id: string, location: string): Promise<
   await saveBook(existing)
 }
 
+// ===== Highlights / Bookmarks =====
+export async function addHighlight(bookId: string, h: import('../types').Highlight) {
+  const book = await getBook(bookId)
+  if (!book) return
+  book.bookState.highlights = [...(book.bookState.highlights ?? []), h]
+  book.lastOpened = Date.now()
+  await saveBook(book)
+}
+
+export async function deleteHighlight(bookId: string, highlightId: string) {
+  const book = await getBook(bookId)
+  if (!book) return
+  book.bookState.highlights = (book.bookState.highlights ?? []).filter(h => h.id !== highlightId)
+  await saveBook(book)
+}
+
+export async function updateHighlightNote(bookId: string, highlightId: string, note: string) {
+  const book = await getBook(bookId)
+  if (!book) return
+  const h = book.bookState.highlights?.find(x => x.id === highlightId)
+  if (!h) return
+  h.note = note
+  await saveBook(book)
+}
+
+export async function setFeaturedHighlight(bookId: string, highlightId: string | undefined) {
+  const book = await getBook(bookId)
+  if (!book) return
+  book.bookState.featuredHighlightId = highlightId
+  await saveBook(book)
+}
+
 /** Extract cover image from epub ArrayBuffer as base64 data URL */
 export async function extractCoverFromEpub(data: ArrayBuffer): Promise<string> {
   try {
