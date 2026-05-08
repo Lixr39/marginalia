@@ -157,4 +157,5 @@ export interface BookState {
   roundtableCharacterIds?: string[] // 圆桌模式：已选角色 ID 列表
   isRoundtableMode?: boolean // 是否处于圆桌模式
   characterReviews?: Record<string, CharacterReview> // 角色书评，key 为角色 id
+  featuredHighlightId?: string // 在 Library 显示的"代表批注"对应高亮 id
 }

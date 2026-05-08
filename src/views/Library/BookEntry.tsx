@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
+import { useRef } from 'react'
 import { Folio } from '../../components/shared/Folio'
 
 export interface BookEntryData {
@@ -13,10 +14,70 @@ export interface BookEntryData {
   marginalia?: string
 }
 
-export function BookEntry({ data }: { data: BookEntryData }) {
+interface Props {
+  data: BookEntryData
+  onLongPress?: (id: string) => void
+}
+
+const LONG_PRESS_MS = 500
+const MOVE_TOLERANCE = 8
+
+export function BookEntry({ data, onLongPress }: Props) {
   const { id, title, author, cover, letter, coverVariant, metaParts, progressPct, marginalia } = data
+  const nav = useNavigate()
+
+  const timerRef = useRef<number | null>(null)
+  const startXY = useRef<{ x: number; y: number } | null>(null)
+  const longFiredRef = useRef(false)
+
+  const cancelTimer = () => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    longFiredRef.current = false
+    startXY.current = { x: e.clientX, y: e.clientY }
+    timerRef.current = window.setTimeout(() => {
+      longFiredRef.current = true
+      onLongPress?.(id)
+    }, LONG_PRESS_MS)
+  }
+
+  const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    if (!startXY.current || timerRef.current === null) return
+    const dx = e.clientX - startXY.current.x
+    const dy = e.clientY - startXY.current.y
+    if (Math.hypot(dx, dy) > MOVE_TOLERANCE) cancelTimer()
+  }
+
+  const onPointerUp = () => {
+    cancelTimer()
+  }
+
+  const onClick = (e: React.MouseEvent) => {
+    if (longFiredRef.current) {
+      e.preventDefault()
+      e.stopPropagation()
+      longFiredRef.current = false
+      return
+    }
+    nav(`/read/${id}`)
+  }
+
   return (
-    <Link to={`/read/${id}`} className="book-entry">
+    <article
+      className="book-entry"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+    >
       {cover ? (
         <img src={cover} alt={title} className="book-entry__cover-img" />
       ) : (
@@ -44,6 +105,6 @@ export function BookEntry({ data }: { data: BookEntryData }) {
       <div className="book-entry__folio">
         <Folio value={progressPct} />
       </div>
-    </Link>
+    </article>
   )
 }
