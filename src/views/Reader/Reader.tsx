@@ -5,8 +5,11 @@ import { ChapterChrome } from './ChapterChrome'
 import { SelectionBubble } from './SelectionBubble'
 import { NoteModal } from './NoteModal'
 import { AnnotationsDrawer } from './AnnotationsDrawer'
+import { AIPanel } from './AIPanel'
+import { CharacterPicker } from './CharacterPicker'
 import {
   getBook,
+  saveBook,
   updateBookLocation,
   addHighlight,
   deleteHighlight,
@@ -17,7 +20,7 @@ import {
 } from '../../store'
 import { PRESET_CHARACTERS } from '../../characters/presets'
 import { bookToMarkdown, downloadText, safeFilename } from '../../lib/exportMarkdown'
-import type { Highlight, Bookmark, Character } from '../../types'
+import type { Highlight, Bookmark, Character, Message } from '../../types'
 import './Reader.css'
 
 interface NavItem {
@@ -65,6 +68,18 @@ export function Reader() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [highlights, setHighlights] = useState<Highlight[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
+  const [allCharacters, setAllCharacters] = useState<Character[]>(PRESET_CHARACTERS)
+  const [activeCharId, setActiveCharId] = useState<string>(PRESET_CHARACTERS[0].id)
+  const [roundtableIds, setRoundtableIds] = useState<string[]>([])
+  const [storedMessages, setStoredMessages] = useState<Message[]>([])
+  const [storedRoundtableMessages, setStoredRoundtableMessages] = useState<Message[]>([])
+  const [aiPanelKey, setAiPanelKey] = useState(0)
+  const [aiPanelOpen, setAiPanelOpen] = useState<{
+    selectedText: string
+    cite: string
+    charactersForSession: Character[]
+  } | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const addHighlightAnnotation = (rend: Rendition, id: string, cfiRange: string) => {
     rend.annotations.add(
@@ -113,8 +128,8 @@ export function Reader() {
       await book.ready
 
       const styles = getComputedStyle(document.documentElement)
-      const cBg = styles.getPropertyValue('--c-bg').trim() || '#faf0ee'
-      const cText = styles.getPropertyValue('--c-text').trim() || '#2d1620'
+      const cBg = styles.getPropertyValue('--c-bg').trim() || '#ffffff'
+      const cText = styles.getPropertyValue('--c-text').trim() || '#2a1c26'
       const cSel = styles.getPropertyValue('--selection-bg').trim() || 'rgba(255,200,100,0.45)'
 
       const rendition = book.renderTo(viewportRef.current!, {
@@ -151,6 +166,16 @@ export function Reader() {
       const existingBms = stored.bookState.bookmarks ?? []
       setHighlights(existingHls)
       setBookmarks(existingBms)
+      setStoredMessages(stored.bookState.messages ?? [])
+      setStoredRoundtableMessages(stored.bookState.roundtableMessages ?? [])
+
+      // load characters (preset + custom)
+      const customs = getCustomCharacters()
+      setAllCharacters([...PRESET_CHARACTERS, ...customs])
+
+      // restore active character + roundtable choice from BookState
+      if (stored.bookState.characterId) setActiveCharId(stored.bookState.characterId)
+      if (stored.bookState.roundtableCharacterIds) setRoundtableIds(stored.bookState.roundtableCharacterIds)
 
       for (const h of existingHls) {
         try {
@@ -315,9 +340,58 @@ export function Reader() {
     setSelection(null)
   }
 
+  const activeChar = allCharacters.find(c => c.id === activeCharId) ?? allCharacters[0]
+  const roundtableChars = roundtableIds
+    .map(id => allCharacters.find(c => c.id === id))
+    .filter(Boolean) as Character[]
+  const isRoundtable = roundtableChars.length > 1
+  const sessionChars = isRoundtable ? roundtableChars : (activeChar ? [activeChar] : [])
+  const characterMap: Record<string, Character> = {}
+  for (const c of allCharacters) characterMap[c.id] = c
+
   const handleAskAI = () => {
-    alert('AI 召唤即将上线（M6）\n\n选中文字：「' + selection?.text.slice(0, 40) + '」')
+    if (!selection) return
+    setAiPanelOpen({
+      selectedText: selection.text,
+      cite: chapterTitle,
+      charactersForSession: sessionChars,
+    })
+    setAiPanelKey(k => k + 1)
     setSelection(null)
+  }
+
+  const persistCharacterChoice = async (charId: string, rtIds: string[]) => {
+    if (!bookId) return
+    try {
+      const fresh = await getBook(bookId)
+      if (!fresh) return
+      fresh.bookState.characterId = charId
+      fresh.bookState.roundtableCharacterIds = rtIds
+      fresh.bookState.isRoundtableMode = rtIds.length > 1
+      await saveBook(fresh)
+    } catch { /* */ }
+  }
+
+  const handlePickerConfirmSingle = (char: Character) => {
+    setActiveCharId(char.id)
+    setRoundtableIds([])
+    setPickerOpen(false)
+    persistCharacterChoice(char.id, [])
+    if (aiPanelOpen) {
+      setAiPanelOpen({ ...aiPanelOpen, charactersForSession: [char] })
+      setAiPanelKey(k => k + 1)
+    }
+  }
+  const handlePickerConfirmRoundtable = (chars: Character[]) => {
+    const ids = chars.map(c => c.id)
+    setRoundtableIds(ids)
+    if (chars.length > 0) setActiveCharId(chars[0].id)
+    setPickerOpen(false)
+    persistCharacterChoice(chars[0]?.id ?? activeCharId, ids)
+    if (aiPanelOpen) {
+      setAiPanelOpen({ ...aiPanelOpen, charactersForSession: chars })
+      setAiPanelKey(k => k + 1)
+    }
   }
 
   const handleRemoveHighlight = async () => {
@@ -451,7 +525,7 @@ export function Reader() {
         <SelectionBubble
           x={selection.x}
           y={selection.y}
-          characterName="虚无主义者"
+          characterName={isRoundtable ? `圆桌·${roundtableChars.length}` : (activeChar?.name ?? '虚无主义者')}
           onHighlight={handleHighlight}
           onNote={handleNoteFromSelection}
           onAskAI={handleAskAI}
@@ -501,6 +575,35 @@ export function Reader() {
                 }
               : undefined
           }
+        />
+      )}
+
+      {aiPanelOpen && bookId && sessionChars.length > 0 && (
+        <AIPanel
+          key={aiPanelKey}
+          bookId={bookId}
+          initialMessages={isRoundtable ? storedRoundtableMessages : storedMessages}
+          selectedText={aiPanelOpen.selectedText}
+          cite={aiPanelOpen.cite}
+          characterMap={characterMap}
+          characters={aiPanelOpen.charactersForSession}
+          readingMode="thinking"
+          chapterIndex={0}
+          chapterTitle={chapterTitle}
+          chapterContent=""
+          onClose={() => setAiPanelOpen(null)}
+          onPickCharacters={() => setPickerOpen(true)}
+        />
+      )}
+
+      {pickerOpen && (
+        <CharacterPicker
+          available={allCharacters}
+          initialActiveId={activeCharId}
+          initialRoundtable={roundtableIds}
+          onConfirmSingle={handlePickerConfirmSingle}
+          onConfirmRoundtable={handlePickerConfirmRoundtable}
+          onCancel={() => setPickerOpen(false)}
         />
       )}
 

@@ -89,7 +89,7 @@ function ImportFooter({ onFile }: { onFile: (f: File) => void }) {
         className="empty-library__import"
         onClick={() => ref.current?.click()}
       >
-        + IMPORT EPUB
+        <em>+</em> IMPORT EPUB
       </button>
       <input
         ref={ref}
@@ -175,10 +175,15 @@ export function Library() {
         <EmptyLibrary onFile={handleFile} />
       ) : (
         <>
+          <div className="library__epigraph">
+            阅读不是动词的对象，而是动词本身。
+            <span className="library__epigraph-cite">— EPIGRAPH</span>
+          </div>
           <SectionHeader
             roman="I."
-            label="IN PROGRESS"
-            count={formatVolumes(books.length)}
+            titlePrefix="In "
+            titleAccent="Progress"
+            sub={`${formatVolumes(books.length)} · CURRENTLY READING`}
           />
           <ul>
             {books.map((b, i) => (

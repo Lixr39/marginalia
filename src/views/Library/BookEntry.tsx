@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router-dom'
 import { useRef } from 'react'
-import { Folio } from '../../components/shared/Folio'
 
 export interface BookEntryData {
   id: string
@@ -78,33 +77,37 @@ export function BookEntry({ data, onLongPress }: Props) {
       role="button"
       tabIndex={0}
     >
-      {cover ? (
-        <img src={cover} alt={title} className="book-entry__cover-img" />
-      ) : (
-        <div className={`book-entry__cover book-entry__cover--c${coverVariant}`}>
-          {letter}
-        </div>
-      )}
-      <div className="book-entry__body">
-        <div className="book-entry__title">{title}</div>
-        <div className="book-entry__author">{author}</div>
-        {metaParts.length > 0 && (
-          <div className="book-entry__meta">
-            {metaParts.map((p, i) => (
-              <span key={i}>
-                {i > 0 && <span className="book-entry__meta-em">—</span>}
-                {p}
-              </span>
-            ))}
+      <div className="book-entry__row">
+        {cover ? (
+          <img src={cover} alt={title} className="book-entry__cover-img" />
+        ) : (
+          <div className={`book-entry__cover book-entry__cover--c${coverVariant}`}>
+            {letter}
           </div>
         )}
-        {marginalia && (
-          <div className="book-entry__marginalia">"{marginalia}"</div>
-        )}
+        <div className="book-entry__body">
+          <h3 className="book-entry__title">{title}</h3>
+          <div className="book-entry__author">{author}</div>
+          {metaParts.length > 0 && (
+            <div className="book-entry__meta">
+              {metaParts.map((p, i) => (
+                <span key={i}>
+                  {i > 0 && <span className="book-entry__meta-em">—</span>}
+                  {p}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="book-entry__folio">
+          <div className="book-entry__folio-num">{progressPct}</div>
+          <div className="book-entry__folio-mark" />
+          <div className="book-entry__folio-lbl">PCT</div>
+        </div>
       </div>
-      <div className="book-entry__folio">
-        <Folio value={progressPct} />
-      </div>
+      {marginalia && (
+        <div className="book-entry__quote">{marginalia}</div>
+      )}
     </article>
   )
 }

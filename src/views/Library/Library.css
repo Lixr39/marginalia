@@ -3,7 +3,7 @@
   padding-bottom: 80px;
 }
 
-/* Masthead */
+/* ===== Masthead ===== */
 .masthead {
   margin-top: 36px;
   padding: 0 var(--sp-4);
@@ -29,12 +29,75 @@
   padding: 0 var(--sp-1);
 }
 
-/* Section header */
+/* ===== Epigraph (under masthead) ===== */
+.library__epigraph {
+  margin: 16px 28px 4px;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: center;
+  color: var(--c-text);
+  opacity: 0.7;
+}
+.library__epigraph-cite {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-mono);
+  opacity: 0.55;
+}
+
+/* ===== Section header ===== */
 .section-h {
+  padding: 22px var(--sp-4) 8px;
+  text-align: center;
+}
+.section-h__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 2.5px;
+  color: var(--c-accent);
+  margin-bottom: 6px;
+}
+.section-h__title {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 26px;
+  color: var(--c-ink, var(--c-text));
+  line-height: 1.05;
+  margin: 0;
+}
+.section-h__em {
+  color: var(--c-accent);
+  font-style: italic;
+}
+.section-h__sub {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 1.5px;
+  opacity: 0.5;
+  margin-top: 8px;
+}
+.section-h__orn {
+  margin-top: 12px;
+  font-family: var(--font-serif);
+  color: var(--c-accent);
+  font-size: 14px;
+  letter-spacing: 8px;
+  opacity: 0.55;
+}
+
+/* Compact (legacy) section header for tight lists */
+.section-h--compact {
   padding: var(--sp-4) var(--sp-4) var(--sp-2);
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  text-align: left;
 }
 .section-h__roman {
   font-family: 'Times New Roman', serif;
@@ -58,36 +121,54 @@
   color: var(--c-text);
 }
 
-/* Book entry */
+/* ===== Book entry (redesigned) ===== */
 .book-entry {
-  display: grid;
-  grid-template-columns: 36px 1fr 38px;
-  gap: 11px;
-  padding: 10px var(--sp-4);
-  border-bottom: 1px dotted var(--c-line-dotted);
-  align-items: stretch;
+  display: block;
+  padding: 16px var(--sp-4) 18px;
+  position: relative;
   text-decoration: none;
   color: inherit;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
 }
-.book-entry:last-child {
-  border-bottom: none;
+.book-entry + .book-entry::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--sp-4);
+  right: var(--sp-4);
+  height: 1px;
+  background: var(--c-text);
+  opacity: 0.1;
+}
+
+.book-entry__row {
+  display: grid;
+  grid-template-columns: 48px 1fr 44px;
+  gap: 14px;
+  align-items: start;
 }
 
 .book-entry__cover {
-  width: 36px;
-  height: 50px;
+  width: 48px;
+  height: 68px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-serif);
   font-style: italic;
-  font-size: 19px;
+  font-size: 26px;
   align-self: start;
-  margin-top: 1px;
 }
 .book-entry__cover--c1 { background: var(--c-accent); color: var(--c-bg); }
-.book-entry__cover--c2 { background: var(--c-text); color: var(--c-bg); }
+.book-entry__cover--c2 { background: var(--c-ink, var(--c-text)); color: var(--c-bg); }
 .book-entry__cover--c3 {
   background: var(--c-bg);
   color: var(--c-accent);
@@ -96,11 +177,10 @@
 .book-entry__cover--c4 { background: var(--c-warm); color: var(--c-text); }
 
 .book-entry__cover-img {
-  width: 36px;
-  height: 50px;
+  width: 48px;
+  height: 68px;
   object-fit: cover;
   align-self: start;
-  margin-top: 1px;
 }
 
 .book-entry__body {
@@ -110,24 +190,26 @@
   min-width: 0;
 }
 .book-entry__title {
-  font-family: var(--font-serif-zh);
-  font-size: 12.5px;
-  color: var(--c-text);
-  letter-spacing: 0.4px;
-  line-height: 1.2;
+  font-family: var(--font-zh-serif);
+  font-weight: 500;
+  font-size: 17px;
+  line-height: 1.25;
+  color: var(--c-ink, var(--c-text));
+  margin: 0;
+  letter-spacing: 1px;
 }
 .book-entry__author {
   font-family: var(--font-serif);
   font-style: italic;
-  font-size: var(--fs-small);
+  font-size: 10px;
   opacity: 0.55;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 .book-entry__meta {
   font-family: var(--font-mono);
-  font-size: 6.8px;
+  font-size: 7px;
   letter-spacing: 0.6px;
-  margin-top: 5px;
+  margin-top: 8px;
   color: var(--c-accent);
   opacity: 0.85;
 }
@@ -136,27 +218,58 @@
   opacity: 0.4;
   margin: 0 4px;
 }
-.book-entry__marginalia {
-  margin-top: 3px;
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 8.5px;
-  color: var(--c-text);
-  opacity: 0.55;
-  line-height: 1.3;
-  padding-left: 8px;
-  border-left: 1px solid var(--c-accent);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
 
 .book-entry__folio {
-  align-self: center;
+  align-self: start;
+  text-align: center;
+  padding-top: 4px;
+}
+.book-entry__folio-num {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--c-accent);
+  letter-spacing: -1px;
+}
+.book-entry__folio-mark {
+  width: 14px;
+  height: 1px;
+  background: var(--c-accent);
+  margin: 4px auto 2px;
+  opacity: 0.7;
+}
+.book-entry__folio-lbl {
+  font-family: var(--font-mono);
+  font-size: 5.5px;
+  letter-spacing: 1.5px;
+  opacity: 0.55;
 }
 
-/* Empty library + import footer */
+.book-entry__quote {
+  margin-top: 12px;
+  padding: 8px 14px 0 28px;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--c-ink, var(--c-text));
+  position: relative;
+  opacity: 0.85;
+}
+.book-entry__quote::before {
+  content: "“";
+  position: absolute;
+  left: 0;
+  top: -8px;
+  font-family: 'Times New Roman', Georgia, serif;
+  font-size: 36px;
+  color: var(--c-accent);
+  opacity: 0.55;
+  line-height: 1;
+}
+
+/* ===== Empty library + import footer ===== */
 .empty-library {
   margin-top: 64px;
   padding: 0 var(--sp-5);
@@ -166,7 +279,7 @@
   font-family: var(--font-serif);
   font-style: italic;
   font-size: 14px;
-  opacity: 0.65;
+  opacity: 0.7;
   line-height: 1.6;
   margin-bottom: 24px;
   color: var(--c-text);
@@ -180,7 +293,7 @@
 }
 .empty-library__import {
   display: inline-block;
-  padding: 12px 24px;
+  padding: 14px 24px;
   border: 1px solid var(--c-text);
   font-family: var(--font-mono);
   font-size: var(--fs-small);
@@ -188,6 +301,15 @@
   color: var(--c-text);
   cursor: pointer;
   background: var(--c-bg);
+}
+.empty-library__import em {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13px;
+  letter-spacing: 0;
+  color: var(--c-accent);
+  margin-right: 6px;
+  font-weight: normal;
 }
 .empty-library__import:active {
   background: var(--c-text);
@@ -198,7 +320,7 @@
   width: 1px; height: 1px;
   padding: 0; margin: -1px;
   overflow: hidden;
-  clip: rect(0,0,0,0);
+  clip: rect(0, 0, 0, 0);
 }
 
 .import-footer {
@@ -206,14 +328,7 @@
   text-align: center;
 }
 
-.book-entry {
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
-
-/* Action sheet (bottom-up modal) */
+/* ===== Action sheet ===== */
 .sheet-backdrop {
   position: fixed;
   inset: 0;
@@ -230,8 +345,9 @@
 .sheet {
   width: 100%;
   background: var(--c-bg);
-  border-top: 1px solid var(--c-text);
   padding: 18px var(--sp-4) calc(12px + env(safe-area-inset-bottom, 0));
+  border-radius: 18px 18px 0 0;
+  border-top: 1px solid var(--c-text);
   animation: sheet-slide 200ms ease-out;
 }
 @keyframes sheet-slide {
@@ -239,10 +355,11 @@
   to { transform: translateY(0); }
 }
 .sheet__title {
-  font-family: var(--font-serif-zh);
-  font-size: 14px;
+  font-family: var(--font-zh-serif);
+  font-size: 16px;
   margin-bottom: 4px;
   color: var(--c-text);
+  letter-spacing: 0.5px;
 }
 .sheet__subtitle {
   font-family: var(--font-serif);
@@ -254,7 +371,7 @@
 .sheet__divider {
   height: 1px;
   background: var(--c-line);
-  margin: 0 -16px 0;
+  margin: 0 calc(-1 * var(--sp-4)) 0;
 }
 .sheet__action {
   display: block;

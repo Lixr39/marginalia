@@ -1,7 +1,12 @@
 /* src/styles/fonts.css */
 :root {
   --font-serif: Georgia, "Source Han Serif SC", "Source Han Serif", "Songti SC", serif;
-  --font-serif-zh: "Songti SC", "Source Han Serif SC", Georgia, serif;
+  /* Literary Chinese serif — for book titles, chapter headings, quotes. */
+  --font-zh-serif: "Source Han Serif SC", "Noto Serif SC", "Songti SC", "STSong", Georgia, serif;
+  /* Modern Chinese sans — for character names, UI labels, body. */
+  --font-zh: "PingFang SC", "Helvetica Neue", sans-serif;
+  /* legacy alias for desktop code paths still referencing it */
+  --font-serif-zh: var(--font-zh-serif);
   --font-mono: 'Courier New', "SF Mono", Menlo, monospace;
   --font-sans: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
 }

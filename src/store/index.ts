@@ -104,6 +104,11 @@ export function saveCustomCharacter(char: Character) {
   localStorage.setItem(STORAGE_KEYS.customCharacters, JSON.stringify(chars))
 }
 
+export function deleteCustomCharacter(id: string) {
+  const chars = getCustomCharacters().filter(c => c.id !== id)
+  localStorage.setItem(STORAGE_KEYS.customCharacters, JSON.stringify(chars))
+}
+
 // ===== Current Book =====
 export function getCurrentBookId(): string | null {
   return localStorage.getItem(STORAGE_KEYS.currentBookId)

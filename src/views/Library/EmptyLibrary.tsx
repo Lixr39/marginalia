@@ -19,7 +19,7 @@ export function EmptyLibrary({ onFile }: Props) {
         className="empty-library__import"
         onClick={() => inputRef.current?.click()}
       >
-        IMPORT EPUB →
+        <em>+</em> IMPORT EPUB
       </button>
       <input
         ref={inputRef}

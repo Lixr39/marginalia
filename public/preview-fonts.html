@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>角色名中文字体对比</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 30px;
+    background: #faf0ee;
+    color: #2d1620;
+    font-family: Georgia, serif;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    margin: 0 0 6px;
+  }
+  .subtitle {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    opacity: 0.55;
+    margin-bottom: 28px;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 140px 1fr 1fr;
+    gap: 16px;
+    align-items: center;
+    padding: 18px 0;
+    border-top: 1px dotted rgba(45,22,32,0.2);
+  }
+  .row:last-child { border-bottom: 1px dotted rgba(45,22,32,0.2); }
+
+  .row-meta {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+  }
+  .row-meta .name {
+    color: #c87a8e;
+    font-weight: 600;
+  }
+  .row-meta .stack {
+    opacity: 0.55;
+    font-size: 9px;
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  .sample {
+    line-height: 1;
+  }
+  .sample-name {
+    font-size: 28px;
+    line-height: 1;
+  }
+  .sample-name-sm {
+    font-size: 18px;
+    margin-top: 4px;
+  }
+
+  /* font variants */
+  .f-songti  { font-family: "Songti SC", "STSong", serif; }
+  .f-kaiti   { font-family: "Kaiti SC", "STKaiti", KaiTi, serif; }
+  .f-fangsong{ font-family: "STFangsong", "FangSong", serif; }
+  .f-pingfang{ font-family: "PingFang SC", "Helvetica Neue", sans-serif; font-weight: 400; }
+  .f-pingfang-bold{ font-family: "PingFang SC", "Helvetica Neue", sans-serif; font-weight: 600; }
+  .f-source  { font-family: "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif; }
+  .f-yuehei  { font-family: "PingFang SC", "Helvetica Neue", sans-serif; font-weight: 600; letter-spacing: 2px; }
+
+  .pick {
+    text-align: center;
+    margin-top: 32px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: #c87a8e;
+    line-height: 1.8;
+  }
+  .pick em {
+    font-family: Georgia, serif;
+    font-style: italic;
+    font-size: 13px;
+    letter-spacing: 0;
+    color: #2d1620;
+  }
+</style>
+</head>
+<body>
+
+<h1>VOICES — 名字字体对比</h1>
+<div class="subtitle">同样大小、同样间距，只换字体。手机上效果会一样。</div>
+
+<div class="row">
+  <div class="row-meta">
+    <div class="name">A · Songti</div>
+    <div class="stack">当前在用<br/>"Songti SC", serif</div>
+  </div>
+  <div class="sample"><div class="sample-name f-songti">苏研</div></div>
+  <div class="sample"><div class="sample-name f-songti">林黛</div></div>
+</div>
+
+<div class="row">
+  <div class="row-meta">
+    <div class="name">B · Kaiti 楷体</div>
+    <div class="stack">书法手写感<br/>"Kaiti SC", KaiTi</div>
+  </div>
+  <div class="sample"><div class="sample-name f-kaiti">苏研</div></div>
+  <div class="sample"><div class="sample-name f-kaiti">林黛</div></div>
+</div>
+
+<div class="row">
+  <div class="row-meta">
+    <div class="name">C · Fangsong 仿宋</div>
+    <div class="stack">学术 / 印刷感<br/>"STFangsong"</div>
+  </div>
+  <div class="sample"><div class="sample-name f-fangsong">苏研</div></div>
+  <div class="sample"><div class="sample-name f-fangsong">林黛</div></div>
+</div>
+
+<div class="row">
+  <div class="row-meta">
+    <div class="name">D · Source Han Serif</div>
+    <div class="stack">现代衬线<br/>"Source Han Serif SC"<br/>(macOS 通常没装)</div>
+  </div>
+  <div class="sample"><div class="sample-name f-source">苏研</div></div>
+  <div class="sample"><div class="sample-name f-source">林黛</div></div>
+</div>
+
+<div class="row">
+  <div class="row-meta">
+    <div class="name">E · PingFang Regular</div>
+    <div class="stack">无衬线 · 轻<br/>"PingFang SC" 400</div>
+  </div>
+  <div class="sample"><div class="sample-name f-pingfang">苏研</div></div>
+  <div class="sample"><div class="sample-name f-pingfang">林黛</div></div>
+</div>
+
+<div class="row">
+  <div class="row-meta">
+    <div class="name">F · PingFang Bold</div>
+    <div class="stack">无衬线 · 粗<br/>"PingFang SC" 600</div>
+  </div>
+  <div class="sample"><div class="sample-name f-pingfang-bold">苏研</div></div>
+  <div class="sample"><div class="sample-name f-pingfang-bold">林黛</div></div>
+</div>
+
+<div class="row">
+  <div class="row-meta">
+    <div class="name">G · PingFang Bold + 字距</div>
+    <div class="stack">无衬线 · 留白<br/>letter-spacing: 2px</div>
+  </div>
+  <div class="sample"><div class="sample-name f-yuehei">苏研</div></div>
+  <div class="sample"><div class="sample-name f-yuehei">林黛</div></div>
+</div>
+
+<div class="pick">
+  我个人推荐 <em>B · Kaiti 楷体</em>（书法签名感，最有"特约撰稿人"的味道）<br/>
+  或 <em>F · PingFang Bold</em>（现代干净，跟杂志名 MARGINALIA 搭起来更冷峻）<br/>
+  你选一个，我把它装回 Voices 实际界面
+</div>
+
+</body>
+</html>

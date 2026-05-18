@@ -1,21 +1,23 @@
 /* src/styles/themes.css */
 :root.theme-day {
-  --c-bg: #faf0ee;
-  --c-text: #2d1620;
-  --c-accent: #c87a8e;
-  --c-warm: #d4b08c;
-  --c-text-soft: rgba(45, 22, 32, 0.55);
-  --c-line: rgba(45, 22, 32, 0.18);
-  --c-line-dotted: rgba(45, 22, 32, 0.18);
-  --c-bubble-ai: rgba(255, 255, 255, 0.65);
-  --c-overlay-dim: rgba(0, 0, 0, 0.22);
+  --c-bg: #ffffff;
+  --c-text: #2a1c26;
+  --c-ink: #170d14;
+  --c-accent: #c87894;
+  --c-warm: #d4ad88;
+  --c-text-soft: rgba(42, 28, 38, 0.55);
+  --c-line: rgba(42, 28, 38, 0.16);
+  --c-line-dotted: rgba(42, 28, 38, 0.16);
+  --c-bubble-ai: rgba(0, 0, 0, 0.04);
+  --c-overlay-dim: rgba(0, 0, 0, 0.28);
   --selection-bg: rgba(255, 200, 100, 0.45);
 }
 
 :root.theme-night {
   --c-bg: #0c0a10;
   --c-text: #ebd9de;
-  --c-accent: #d8889e;
+  --c-ink: #f6e9ee;
+  --c-accent: #d88aa0;
   --c-warm: #b89a78;
   --c-text-soft: rgba(235, 217, 222, 0.5);
   --c-line: rgba(235, 217, 222, 0.18);
