@@ -418,6 +418,61 @@
   opacity: 0.5;
 }
 
+.annot-drawer__notes-btn {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px dashed var(--c-accent);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--ls-section);
+  color: var(--c-accent);
+  cursor: pointer;
+  text-align: center;
+}
+.annot-drawer__notes-btn em {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 12px;
+  letter-spacing: 0;
+  margin-right: 6px;
+}
+
+.freenote-preview {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--c-text);
+  padding: 0 4px;
+}
+.freenote-preview h1,
+.freenote-preview h2,
+.freenote-preview h3 {
+  font-family: var(--font-zh-serif);
+  font-weight: 500;
+  color: var(--c-ink, var(--c-text));
+}
+.freenote-preview h1 { font-size: 22px; margin-top: 1.2em; }
+.freenote-preview h2 { font-size: 18px; margin-top: 1.2em; }
+.freenote-preview h3 { font-size: 15px; margin-top: 1em; }
+.freenote-preview p { margin: 0.8em 0; }
+.freenote-preview blockquote {
+  border-left: 2px solid var(--c-accent);
+  padding-left: 12px;
+  font-style: italic;
+  opacity: 0.85;
+  margin: 1em 0;
+}
+.freenote-preview code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--c-bubble-ai);
+  padding: 2px 6px;
+}
+.freenote-preview strong { color: var(--c-accent); font-weight: 600; }
+
 /* ===== AI Panel ===== */
 .ai-panel-backdrop {
   position: fixed;

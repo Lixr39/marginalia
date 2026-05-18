@@ -6,6 +6,7 @@ interface Props {
   onJumpHighlight: (cfiRange: string) => void
   onJumpBookmark: (cfi: string) => void
   onDeleteBookmark: (id: string) => void
+  onOpenNotes: () => void
   onExport: () => void
   onClose: () => void
 }
@@ -16,6 +17,7 @@ export function AnnotationsDrawer({
   onJumpHighlight,
   onJumpBookmark,
   onDeleteBookmark,
+  onOpenNotes,
   onExport,
   onClose,
 }: Props) {
@@ -76,6 +78,9 @@ export function AnnotationsDrawer({
         ))}
 
         <div className="annot-drawer__footer">
+          <button className="annot-drawer__notes-btn" onClick={onOpenNotes}>
+            <em>✎</em> FREE NOTES
+          </button>
           <button
             className="annot-drawer__export"
             onClick={onExport}
@@ -83,7 +88,7 @@ export function AnnotationsDrawer({
             ⤓ EXPORT MARKDOWN
           </button>
           <div className="annot-drawer__footer-hint">
-            含高亮、笔记、书签{(highlights.length === 0 && bookmarks.length === 0) ? '（暂无内容）' : ''}
+            含高亮、笔记、书签、对话{(highlights.length === 0 && bookmarks.length === 0) ? '（暂无内容）' : ''}
           </div>
         </div>
       </aside>

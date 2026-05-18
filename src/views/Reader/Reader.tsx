@@ -7,6 +7,7 @@ import { NoteModal } from './NoteModal'
 import { AnnotationsDrawer } from './AnnotationsDrawer'
 import { AIPanel } from './AIPanel'
 import { CharacterPicker } from './CharacterPicker'
+import { FreeNoteEditor } from './FreeNoteEditor'
 import {
   getBook,
   saveBook,
@@ -80,6 +81,9 @@ export function Reader() {
     charactersForSession: Character[]
   } | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [freeNoteOpen, setFreeNoteOpen] = useState(false)
+  const [freeNoteText, setFreeNoteText] = useState('')
+  const [bookTitle, setBookTitle] = useState('')
 
   const addHighlightAnnotation = (rend: Rendition, id: string, cfiRange: string) => {
     rend.annotations.add(
@@ -141,16 +145,31 @@ export function Reader() {
       })
       renditionRef.current = rendition
 
+      const cAccent = styles.getPropertyValue('--c-accent').trim() || '#c87894'
       rendition.themes.default({
         body: {
           'font-family': 'Georgia, "Source Han Serif SC", "Songti SC", serif',
           'font-size': '17px',
-          'line-height': '1.7',
+          'line-height': '1.75',
           'color': cText,
           'background': cBg,
-          'padding': '0 4px',
+          'padding': '0 6px',
         },
-        'p': { 'margin': '0.8em 0' },
+        'p': { 'margin': '0.6em 0', 'text-indent': '2em' },
+        'h1, h2, h3, h4': {
+          'font-family': '"Source Han Serif SC", "Songti SC", Georgia, serif',
+          'font-weight': '500',
+          'color': cText,
+          'text-indent': '0',
+        },
+        'p:first-of-type::first-letter, h1 + p::first-letter, h2 + p::first-letter, h3 + p::first-letter': {
+          'float': 'left',
+          'font-family': 'Georgia, "Source Han Serif SC", "Songti SC", serif',
+          'font-size': '3.4em',
+          'line-height': '0.9',
+          'margin': '0.05em 0.12em 0 0',
+          'color': cAccent,
+        },
         '::selection': { 'background': cSel },
       })
 
@@ -168,6 +187,8 @@ export function Reader() {
       setBookmarks(existingBms)
       setStoredMessages(stored.bookState.messages ?? [])
       setStoredRoundtableMessages(stored.bookState.roundtableMessages ?? [])
+      setFreeNoteText(stored.bookState.freeNote ?? '')
+      setBookTitle(stored.title)
 
       // load characters (preset + custom)
       const customs = getCustomCharacters()
@@ -596,6 +617,25 @@ export function Reader() {
         />
       )}
 
+      {freeNoteOpen && bookId && (
+        <FreeNoteEditor
+          initial={freeNoteText}
+          bookTitle={bookTitle}
+          onSave={async (text) => {
+            try {
+              const fresh = await getBook(bookId)
+              if (!fresh) return
+              fresh.bookState.freeNote = text
+              await saveBook(fresh)
+              setFreeNoteText(text)
+            } catch (err) {
+              console.error('save free note failed', err)
+            }
+          }}
+          onClose={() => setFreeNoteOpen(false)}
+        />
+      )}
+
       {pickerOpen && (
         <CharacterPicker
           available={allCharacters}
@@ -625,6 +665,10 @@ export function Reader() {
             renditionRef.current?.display(cfi).catch(() => {})
           }}
           onDeleteBookmark={handleDeleteBookmark}
+          onOpenNotes={() => {
+            setDrawerOpen(false)
+            setFreeNoteOpen(true)
+          }}
           onExport={handleExport}
           onClose={() => setDrawerOpen(false)}
         />
