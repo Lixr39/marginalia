@@ -8,6 +8,9 @@ import { AnnotationsDrawer } from './AnnotationsDrawer'
 import { AIPanel } from './AIPanel'
 import { CharacterPicker } from './CharacterPicker'
 import { FreeNoteEditor } from './FreeNoteEditor'
+import { TocDrawer, type TocEntry } from './TocDrawer'
+import { DisplaySheet } from './DisplaySheet'
+import type { ReadingMode } from '../../types'
 import {
   getBook,
   saveBook,
@@ -84,6 +87,32 @@ export function Reader() {
   const [freeNoteOpen, setFreeNoteOpen] = useState(false)
   const [freeNoteText, setFreeNoteText] = useState('')
   const [bookTitle, setBookTitle] = useState('')
+  const [tocOpen, setTocOpen] = useState(false)
+  const [displayOpen, setDisplayOpen] = useState(false)
+  const [tocFlat, setTocFlat] = useState<TocEntry[]>([])
+  const [currentHref, setCurrentHref] = useState('')
+  const [fontSize, setFontSize] = useState<number>(() => {
+    const stored = parseInt(localStorage.getItem('marginalia-font-size') ?? '17', 10)
+    return isNaN(stored) ? 17 : stored
+  })
+  const [readingMode, setReadingMode] = useState<ReadingMode>(() => {
+    return (localStorage.getItem('marginalia-reading-mode') as ReadingMode | null) ?? 'thinking'
+  })
+
+  // Apply font size changes live to the rendition (without reload)
+  useEffect(() => {
+    const rend = renditionRef.current
+    if (!rend) return
+    try {
+      rend.themes.fontSize(`${fontSize}px`)
+      localStorage.setItem('marginalia-font-size', String(fontSize))
+    } catch { /* */ }
+  }, [fontSize])
+
+  // Persist reading mode
+  useEffect(() => {
+    localStorage.setItem('marginalia-reading-mode', readingMode)
+  }, [readingMode])
 
   const addHighlightAnnotation = (rend: Rendition, id: string, cfiRange: string) => {
     rend.annotations.add(
@@ -149,7 +178,7 @@ export function Reader() {
       rendition.themes.default({
         body: {
           'font-family': 'Georgia, "Source Han Serif SC", "Songti SC", serif',
-          'font-size': '17px',
+          'font-size': `${fontSize}px`,
           'line-height': '1.75',
           'color': cText,
           'background': cBg,
@@ -206,23 +235,34 @@ export function Reader() {
         }
       }
 
-      // TOC for chapter title
-      let tocFlat: NavItem[] = []
+      // TOC for chapter title (flat list) + tree-flat (for TOC drawer with depth)
+      let tocLocal: NavItem[] = []
+      const tocTreeFlat: TocEntry[] = []
       try {
         const navObj = await book.loaded.navigation
-        tocFlat = flattenToc((navObj as { toc: NavItem[] }).toc || [])
+        const tree = (navObj as { toc: NavItem[] }).toc || []
+        tocLocal = flattenToc(tree)
+        const walk = (items: NavItem[], depth: number) => {
+          for (const it of items) {
+            tocTreeFlat.push({ href: it.href, label: it.label || '', depth })
+            if (it.subitems && it.subitems.length) walk(it.subitems, depth + 1)
+          }
+        }
+        walk(tree, 0)
       } catch {
-        tocFlat = []
+        tocLocal = []
       }
+      setTocFlat(tocTreeFlat)
 
       rendition.on('relocated', (location: { start: { cfi: string; href: string; percentage?: number } }) => {
         const cfi = location.start.cfi
         const href = location.start.href
         const pct = Math.round((location.start.percentage ?? 0) * 100)
         setProgressPct(pct)
+        setCurrentHref(href)
 
         const hrefBase = href.split('#')[0]
-        const item = tocFlat.find(t => t.href.split('#')[0] === hrefBase)
+        const item = tocLocal.find(t => t.href.split('#')[0] === hrefBase)
         setChapterTitle(item ? item.label.trim() : '')
 
         if (cfi && bookId) {
@@ -529,6 +569,8 @@ export function Reader() {
         progressPct={progressPct}
         onAddBookmark={handleAddBookmark}
         onOpenDrawer={() => setDrawerOpen(true)}
+        onOpenToc={() => setTocOpen(true)}
+        onOpenDisplay={() => setDisplayOpen(true)}
       />
       <div ref={viewportRef} className="reader__viewport" onClick={onViewportClick}>
         {loading && <div className="reader__loading">opening…</div>}
@@ -608,12 +650,33 @@ export function Reader() {
           cite={aiPanelOpen.cite}
           characterMap={characterMap}
           characters={aiPanelOpen.charactersForSession}
-          readingMode="thinking"
+          readingMode={readingMode}
           chapterIndex={0}
           chapterTitle={chapterTitle}
           chapterContent=""
           onClose={() => setAiPanelOpen(null)}
           onPickCharacters={() => setPickerOpen(true)}
+        />
+      )}
+
+      {tocOpen && (
+        <TocDrawer
+          entries={tocFlat}
+          currentHref={currentHref}
+          onJump={(href) => {
+            renditionRef.current?.display(href).catch(() => {})
+          }}
+          onClose={() => setTocOpen(false)}
+        />
+      )}
+
+      {displayOpen && (
+        <DisplaySheet
+          fontSize={fontSize}
+          onFontSize={setFontSize}
+          readingMode={readingMode}
+          onReadingMode={setReadingMode}
+          onClose={() => setDisplayOpen(false)}
         />
       )}
 

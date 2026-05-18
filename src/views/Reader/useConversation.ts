@@ -9,15 +9,15 @@ import {
 import {
   getLLMConfig,
   generateId,
-  addMessage,
-  addOpinionCard,
+  appendMessage,
+  removeMessage as removeMessageDb,
+  appendOpinionCard,
 } from '../../store'
 import type { Character, Message, OpinionCard, ReadingMode } from '../../types'
 
 /**
- * Parses optional <think>...</think> wrapper that some models (GLM, DeepSeek-R1)
- * emit before the visible content. Streaming-aware: handles partial open tag.
- * Lifted verbatim from desktop Sidebar to keep proven behavior.
+ * Parses optional <think>...</think> wrapper. Streaming-aware.
+ * Lifted verbatim from desktop Sidebar.
  */
 export function parseThinking(text: string, isStreaming = false): { thinking: string; content: string } {
   const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/)
@@ -34,10 +34,6 @@ export function parseThinking(text: string, isStreaming = false): { thinking: st
   return { thinking: '', content: text }
 }
 
-/**
- * Find the paragraph containing `selectedText` and return ±count paragraphs.
- * Lifted from desktop Sidebar.
- */
 export function extractSurroundingParagraphs(chapterContent: string, selectedText: string, count = 3): string {
   const paragraphs = chapterContent.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length > 20)
   if (paragraphs.length === 0) return selectedText
@@ -68,7 +64,8 @@ interface UseConversationArgs {
   chapterTitle: string
   chapterContent: string
   bookSummary?: string
-  /** When set, every character message is also turned into an OpinionCard. */
+  /** Persist to roundtableMessages bucket instead of messages. */
+  bucket?: 'messages' | 'roundtableMessages'
   trackOpinionCards?: boolean
 }
 
@@ -76,6 +73,7 @@ export function useConversation(args: UseConversationArgs) {
   const {
     bookId, initialMessages, readingMode, chapterIndex,
     chapterTitle, chapterContent, bookSummary,
+    bucket = 'messages',
     trackOpinionCards = true,
   } = args
 
@@ -83,12 +81,11 @@ export function useConversation(args: UseConversationArgs) {
   const [streaming, setStreaming] = useState('')
   const [roundtableStreamingMap, setRoundtableStreamingMap] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
+  const [lastFailedAction, setLastFailedAction] = useState<(() => void) | null>(null)
 
-  // refs to avoid stale closures within long-running streams
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
 
-  // ===== Single-character: triggered by selection =====
   const triggerCharacterResponse = useCallback(async (character: Character, text: string) => {
     const config = getLLMConfig()
     if (!config) {
@@ -105,9 +102,10 @@ export function useConversation(args: UseConversationArgs) {
       timestamp: Date.now(),
     }
     setMessages(prev => [...prev, userMsg])
-    addMessage(bookId, userMsg)
+    await appendMessage(bookId, userMsg, bucket)
     setLoading(true)
     setStreaming('')
+    setLastFailedAction(null)
 
     try {
       const ctx = chapterContent
@@ -153,7 +151,7 @@ export function useConversation(args: UseConversationArgs) {
         timestamp: Date.now(),
       }
       setMessages(prev => [...prev, charMsg])
-      addMessage(bookId, charMsg)
+      await appendMessage(bookId, charMsg, bucket)
 
       if (trackOpinionCards) {
         const card: OpinionCard = {
@@ -167,7 +165,7 @@ export function useConversation(args: UseConversationArgs) {
           userStance: null,
           timestamp: Date.now(),
         }
-        addOpinionCard(bookId, card)
+        await appendOpinionCard(bookId, card)
       }
     } catch (err) {
       const errMsg: Message = {
@@ -179,13 +177,13 @@ export function useConversation(args: UseConversationArgs) {
         timestamp: Date.now(),
       }
       setMessages(prev => [...prev, errMsg])
+      setLastFailedAction(() => () => triggerCharacterResponse(character, text))
     } finally {
       setLoading(false)
       setStreaming('')
     }
-  }, [bookId, chapterIndex, chapterTitle, chapterContent, readingMode, bookSummary, trackOpinionCards])
+  }, [bookId, chapterIndex, chapterTitle, chapterContent, readingMode, bookSummary, trackOpinionCards, bucket])
 
-  // ===== Roundtable: trigger with selection or follow-up text =====
   const triggerRoundtable = useCallback(async (
     chars: Character[],
     selectedText: string,
@@ -195,7 +193,6 @@ export function useConversation(args: UseConversationArgs) {
     if (!config) { alert('请先在 SETUP 配置 AI Key'); return }
     if (chars.length === 0) return
 
-    // @-mention reorder
     let order = chars
     if (userMessage) {
       const mentioned = chars.filter(c => userMessage.includes('@' + c.name))
@@ -214,8 +211,9 @@ export function useConversation(args: UseConversationArgs) {
       timestamp: Date.now(),
     }
     setMessages(prev => [...prev, userMsg])
-    addMessage(bookId, userMsg)
+    await appendMessage(bookId, userMsg, bucket)
     setLoading(true)
+    setLastFailedAction(null)
 
     const ctx = selectedText
       ? (chapterContent ? extractSurroundingParagraphs(chapterContent, selectedText) : selectedText)
@@ -257,7 +255,7 @@ export function useConversation(args: UseConversationArgs) {
           characterId: char.id,
         }
         setMessages(prev => [...prev, charMsg])
-        addMessage(bookId, charMsg)
+        await appendMessage(bookId, charMsg, bucket)
       } catch (err) {
         const errMsg: Message = {
           id: generateId(),
@@ -268,6 +266,7 @@ export function useConversation(args: UseConversationArgs) {
           timestamp: Date.now(),
         }
         setMessages(prev => [...prev, errMsg])
+        setLastFailedAction(() => () => triggerRoundtable(chars, selectedText, userMessage))
       } finally {
         setRoundtableStreamingMap(prev => {
           const next = { ...prev }
@@ -277,9 +276,8 @@ export function useConversation(args: UseConversationArgs) {
       }
     }
     setLoading(false)
-  }, [bookId, chapterIndex, chapterTitle, chapterContent, readingMode, bookSummary])
+  }, [bookId, chapterIndex, chapterTitle, chapterContent, readingMode, bookSummary, bucket])
 
-  // ===== Follow-up reply (single character mode) =====
   const sendReply = useCallback(async (character: Character, text: string) => {
     const config = getLLMConfig()
     if (!config || !text.trim()) return
@@ -291,9 +289,10 @@ export function useConversation(args: UseConversationArgs) {
       timestamp: Date.now(),
     }
     setMessages(prev => [...prev, userMsg])
-    addMessage(bookId, userMsg)
+    await appendMessage(bookId, userMsg, bucket)
     setLoading(true)
     setStreaming('')
+    setLastFailedAction(null)
 
     try {
       const lastSelected = messagesRef.current.slice().reverse().find(m => m.selectedText)?.selectedText ?? ''
@@ -335,7 +334,7 @@ export function useConversation(args: UseConversationArgs) {
         timestamp: Date.now(),
       }
       setMessages(prev => [...prev, charMsg])
-      addMessage(bookId, charMsg)
+      await appendMessage(bookId, charMsg, bucket)
     } catch (err) {
       const errMsg: Message = {
         id: generateId(),
@@ -346,19 +345,43 @@ export function useConversation(args: UseConversationArgs) {
         timestamp: Date.now(),
       }
       setMessages(prev => [...prev, errMsg])
+      setLastFailedAction(() => () => sendReply(character, text))
     } finally {
       setLoading(false)
       setStreaming('')
     }
-  }, [bookId, chapterIndex, chapterTitle, chapterContent, readingMode, bookSummary])
+  }, [bookId, chapterIndex, chapterTitle, chapterContent, readingMode, bookSummary, bucket])
+
+  const deleteMessage = useCallback(async (msgId: string) => {
+    setMessages(prev => prev.filter(m => m.id !== msgId))
+    await removeMessageDb(bookId, msgId, bucket)
+  }, [bookId, bucket])
+
+  const retryLast = useCallback(() => {
+    if (!lastFailedAction) return
+    const action = lastFailedAction
+    setLastFailedAction(null)
+    // remove the trailing error message
+    setMessages(prev => {
+      const last = prev[prev.length - 1]
+      if (last && last.role === 'character' && last.content.startsWith('出错了') || last?.content.includes('出错了')) {
+        return prev.slice(0, -1)
+      }
+      return prev
+    })
+    action()
+  }, [lastFailedAction])
 
   return {
     messages,
     streaming,
     roundtableStreamingMap,
     loading,
+    lastFailedAction,
     triggerCharacterResponse,
     triggerRoundtable,
     sendReply,
+    deleteMessage,
+    retryLast,
   }
 }

@@ -3,6 +3,60 @@ import ReactMarkdown from 'react-markdown'
 import type { Character, Message, ReadingMode } from '../../types'
 import { useConversation } from './useConversation'
 
+interface MessageBubbleProps {
+  m: Message
+  isRoundtable: boolean
+  single?: Character
+  characterMap: Record<string, Character>
+  onDelete: (id: string) => void
+}
+
+function MessageBubble({ m, isRoundtable, single, characterMap, onDelete }: MessageBubbleProps) {
+  const [thinkingOpen, setThinkingOpen] = useState(false)
+  const isUser = m.role === 'user'
+  const charName = m.characterId ? characterMap[m.characterId]?.name : single?.name
+  const charAvatar = m.characterId ? characterMap[m.characterId]?.avatar : single?.avatar
+
+  return (
+    <div className={'ai-bub' + (isUser ? ' ai-bub--user' : '')}>
+      {!isUser && isRoundtable && charName && (
+        <div className="ai-bub__char">
+          <span className="ai-bub__char-av">{charAvatar}</span>
+          {charName}
+        </div>
+      )}
+      {isUser && m.selectedText && !m.content && (
+        <div className="ai-bub__from-selection">↑ 就这段</div>
+      )}
+      {m.thinking && (
+        <div className="ai-bub__thinking">
+          <button
+            className="ai-bub__thinking-toggle"
+            onClick={() => setThinkingOpen(v => !v)}
+          >
+            {thinkingOpen ? '▾' : '▸'} 思考链
+          </button>
+          {thinkingOpen && (
+            <div className="ai-bub__thinking-body">{m.thinking}</div>
+          )}
+        </div>
+      )}
+      {(!isUser || m.content) && (
+        <div className="ai-bub__content">
+          {isUser ? m.content : <ReactMarkdown>{m.content}</ReactMarkdown>}
+        </div>
+      )}
+      <button
+        className="ai-bub__del"
+        onClick={() => onDelete(m.id)}
+        aria-label="delete message"
+      >
+        ✕
+      </button>
+    </div>
+  )
+}
+
 interface Props {
   bookId: string
   initialMessages: Message[]
@@ -50,6 +104,7 @@ export function AIPanel(props: Props) {
     chapterTitle,
     chapterContent,
     bookSummary,
+    bucket: isRoundtable ? 'roundtableMessages' : 'messages',
   })
 
   const [draft, setDraft] = useState('')
@@ -143,29 +198,16 @@ export function AIPanel(props: Props) {
           {conv.messages.length === 0 && !conv.loading && (
             <div className="ai-panel__empty">让 AI 给你第一反应…</div>
           )}
-          {conv.messages.map(m => {
-            const isUser = m.role === 'user'
-            const charName = m.characterId ? characterMap[m.characterId]?.name : single?.name
-            const charAvatar = m.characterId ? characterMap[m.characterId]?.avatar : single?.avatar
-            return (
-              <div key={m.id} className={'ai-bub' + (isUser ? ' ai-bub--user' : '')}>
-                {!isUser && isRoundtable && charName && (
-                  <div className="ai-bub__char">
-                    <span className="ai-bub__char-av">{charAvatar}</span>
-                    {charName}
-                  </div>
-                )}
-                {isUser && m.selectedText && !m.content && (
-                  <div className="ai-bub__from-selection">↑ 就这段</div>
-                )}
-                {(!isUser || m.content) && (
-                  <div className="ai-bub__content">
-                    {isUser ? m.content : <ReactMarkdown>{m.content}</ReactMarkdown>}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {conv.messages.map(m => (
+            <MessageBubble
+              key={m.id}
+              m={m}
+              isRoundtable={isRoundtable}
+              single={single}
+              characterMap={characterMap}
+              onDelete={conv.deleteMessage}
+            />
+          ))}
 
           {/* in-progress streaming bubble (single mode) */}
           {showStreaming && (
@@ -197,6 +239,12 @@ export function AIPanel(props: Props) {
           {conv.loading && !showStreaming && roundtableStreaming.length === 0 && (
             <div className="ai-bub ai-bub--streaming">
               <div className="ai-bub__content"><em>思考中…</em></div>
+            </div>
+          )}
+
+          {conv.lastFailedAction && !conv.loading && (
+            <div className="ai-panel__retry">
+              <button onClick={conv.retryLast}>⟳ 重试上次请求</button>
             </div>
           )}
         </div>

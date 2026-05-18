@@ -7,9 +7,11 @@ import {
   getAllBooks,
   saveBook,
   deleteBook,
+  setBookTag,
   extractCoverFromEpub,
   type StoredBook,
 } from '../../store'
+import type { BookTag } from '../../types'
 import { pickFeaturedHighlight } from '../../lib/featuredHighlight'
 import { normalizeEpub } from '../../lib/epubNormalize'
 import './Library.css'
@@ -116,6 +118,7 @@ export function Library() {
   const [importing, setImporting] = useState(false)
   const [sheetFor, setSheetFor] = useState<StoredBook | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [tagFilter, setTagFilter] = useState<BookTag | 'all'>('all')
 
   const load = useCallback(async () => {
     const all = await getAllBooks()
@@ -183,21 +186,34 @@ export function Library() {
             roman="I."
             titlePrefix="In "
             titleAccent="Progress"
-            sub={`${formatVolumes(books.length)} · CURRENTLY READING`}
+            sub={`${formatVolumes(books.length)} · TAP & HOLD TO TAG`}
           />
-          <ul>
-            {books.map((b, i) => (
-              <li key={b.id}>
-                <BookEntry
-                  data={bookToEntry(b, i)}
-                  onLongPress={(id) => {
-                    const target = books.find(x => x.id === id) ?? null
-                    setSheetFor(target)
-                    setConfirmDelete(false)
-                  }}
-                />
-              </li>
+          <div className="library__tag-filters">
+            {(['all', 'reading', 'finished', 'wishlist'] as const).map(t => (
+              <button
+                key={t}
+                className={'library__tag-filter' + (tagFilter === t ? ' library__tag-filter--active' : '')}
+                onClick={() => setTagFilter(t)}
+              >
+                {t === 'all' ? 'ALL' : t === 'reading' ? 'READING' : t === 'finished' ? 'FINISHED' : 'WISHLIST'}
+              </button>
             ))}
+          </div>
+          <ul>
+            {books
+              .filter(b => tagFilter === 'all' || b.bookState.tag === tagFilter)
+              .map((b, i) => (
+                <li key={b.id}>
+                  <BookEntry
+                    data={bookToEntry(b, i)}
+                    onLongPress={(id) => {
+                      const target = books.find(x => x.id === id) ?? null
+                      setSheetFor(target)
+                      setConfirmDelete(false)
+                    }}
+                  />
+                </li>
+              ))}
           </ul>
           <ImportFooter onFile={handleFile} />
         </>
@@ -213,6 +229,25 @@ export function Library() {
             <div className="sheet__divider" />
             {!confirmDelete ? (
               <>
+                <div className="sheet__tag-row">
+                  {(['reading', 'finished', 'wishlist'] as const).map(t => {
+                    const active = sheetFor.bookState.tag === t
+                    return (
+                      <button
+                        key={t}
+                        className={'sheet__tag' + (active ? ' sheet__tag--active' : '')}
+                        onClick={async () => {
+                          const next = active ? undefined : t
+                          await setBookTag(sheetFor.id, next)
+                          await load()
+                          setSheetFor(prev => prev ? { ...prev, bookState: { ...prev.bookState, tag: next } } : prev)
+                        }}
+                      >
+                        {t === 'reading' ? '在读' : t === 'finished' ? '已读' : '想读'}
+                      </button>
+                    )
+                  })}
+                </div>
                 <button
                   className="sheet__action sheet__action--danger"
                   onClick={() => setConfirmDelete(true)}

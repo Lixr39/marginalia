@@ -15,6 +15,10 @@ export {
   setFeaturedHighlight,
   addBookmark,
   deleteBookmark,
+  appendMessage,
+  removeMessage,
+  appendOpinionCard,
+  setBookTag,
 } from './db'
 export type { StoredBook } from './db'
 

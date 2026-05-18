@@ -134,6 +134,47 @@ export async function deleteBookmark(bookId: string, bookmarkId: string) {
   await saveBook(book)
 }
 
+// ===== Messages + Opinion cards (IndexedDB-backed) =====
+export async function appendMessage(
+  bookId: string,
+  msg: import('../types').Message,
+  bucket: 'messages' | 'roundtableMessages' = 'messages',
+) {
+  const book = await getBook(bookId)
+  if (!book) return
+  const list = (book.bookState[bucket] ?? []) as import('../types').Message[]
+  book.bookState[bucket] = [...list, msg]
+  book.lastOpened = Date.now()
+  await saveBook(book)
+}
+
+export async function removeMessage(
+  bookId: string,
+  msgId: string,
+  bucket: 'messages' | 'roundtableMessages' = 'messages',
+) {
+  const book = await getBook(bookId)
+  if (!book) return
+  const list = (book.bookState[bucket] ?? []) as import('../types').Message[]
+  book.bookState[bucket] = list.filter(m => m.id !== msgId)
+  await saveBook(book)
+}
+
+export async function appendOpinionCard(bookId: string, card: import('../types').OpinionCard) {
+  const book = await getBook(bookId)
+  if (!book) return
+  book.bookState.opinionCards = [...(book.bookState.opinionCards ?? []), card]
+  await saveBook(book)
+}
+
+// ===== Book tag (在读 / 已读 / 想读) =====
+export async function setBookTag(bookId: string, tag: import('../types').BookTag | undefined) {
+  const book = await getBook(bookId)
+  if (!book) return
+  book.bookState.tag = tag
+  await saveBook(book)
+}
+
 /** Extract cover image from epub ArrayBuffer as base64 data URL */
 export async function extractCoverFromEpub(data: ArrayBuffer): Promise<string> {
   try {
