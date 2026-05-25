@@ -202,12 +202,73 @@ export function Reader() {
         '::selection': { 'background': cSel },
       })
 
+      // ===== Touch swipe / tap navigation INSIDE the chapter iframe =====
+      // MUST be registered BEFORE rendition.display() so the hook fires
+      // for the first chapter too. epubjs runs hooks on every chapter load.
+      const iframeCleanups: Array<() => void> = []
+      const attachTouchHandlers = (doc: Document, win: Window) => {
+        let sx = 0, sy = 0, st = 0
+        const onTouchStart = (e: TouchEvent) => {
+          if (win.getSelection()?.toString()) return
+          if (e.touches.length !== 1) return
+          sx = e.touches[0].clientX
+          sy = e.touches[0].clientY
+          st = Date.now()
+        }
+        const onTouchEnd = (e: TouchEvent) => {
+          if (win.getSelection()?.toString()) return
+          if (!st) return
+          const dx = e.changedTouches[0].clientX - sx
+          const dy = Math.abs(e.changedTouches[0].clientY - sy)
+          const dt = Date.now() - st
+          st = 0
+          if (dt > 600) return
+          if (dy > 40) return
+          if (dx < -40) rendition.next()
+          else if (dx > 40) rendition.prev()
+        }
+        const onClick = (e: MouseEvent) => {
+          if (win.getSelection()?.toString()) return
+          const rect = doc.documentElement.getBoundingClientRect()
+          const x = e.clientX - rect.left
+          const w = rect.width
+          if (x < w * 0.25) rendition.prev()
+          else if (x > w * 0.75) rendition.next()
+        }
+        doc.addEventListener('touchstart', onTouchStart, { passive: true })
+        doc.addEventListener('touchend', onTouchEnd, { passive: true })
+        doc.addEventListener('click', onClick)
+        iframeCleanups.push(() => {
+          doc.removeEventListener('touchstart', onTouchStart)
+          doc.removeEventListener('touchend', onTouchEnd)
+          doc.removeEventListener('click', onClick)
+        })
+      }
+      rendition.hooks.content.register((contents: Contents) => {
+        const c = contents as unknown as { document?: Document; window?: Window }
+        if (c.document && c.window) attachTouchHandlers(c.document, c.window)
+      })
+
       const startCfi = stored.bookState.currentLocation || undefined
       try {
         await rendition.display(startCfi)
       } catch {
         await rendition.display()
       }
+
+      // Belt + braces: if the hook didn't catch the first iframe (race condition
+      // on some epubjs versions), grab it directly and wire it now.
+      setTimeout(() => {
+        const ifr = viewportRef.current?.querySelector('iframe') as HTMLIFrameElement | null
+        if (ifr?.contentDocument && ifr.contentWindow) {
+          // dedupe: if we already attached, the listeners are idempotent-safe
+          // because we attach by reference; second attach is a no-op visible side
+          // effect (slightly more handlers) but harmless. Only do this if hook count == 0.
+          if (iframeCleanups.length === 0) {
+            attachTouchHandlers(ifr.contentDocument, ifr.contentWindow)
+          }
+        }
+      }, 300)
 
       // restore existing highlights + bookmarks state
       const existingHls = stored.bookState.highlights ?? []
@@ -297,34 +358,6 @@ export function Reader() {
       }
       rendition.on('selected', onSelected)
 
-      const vp = viewportRef.current!
-      let touchStartX = 0
-      let touchStartY = 0
-      let touchStartTime = 0
-
-      const onTouchStart = (e: TouchEvent) => {
-        if (window.getSelection()?.toString()) return
-        if (e.touches.length !== 1) return
-        touchStartX = e.touches[0].clientX
-        touchStartY = e.touches[0].clientY
-        touchStartTime = Date.now()
-      }
-      const onTouchEnd = (e: TouchEvent) => {
-        if (window.getSelection()?.toString()) return
-        if (touchStartTime === 0) return
-        const dx = e.changedTouches[0].clientX - touchStartX
-        const dy = Math.abs(e.changedTouches[0].clientY - touchStartY)
-        const dt = Date.now() - touchStartTime
-        touchStartTime = 0
-        if (dt > 600) return
-        if (dy > 40) return
-        if (dx < -40) rendition.next()
-        else if (dx > 40) rendition.prev()
-      }
-
-      vp.addEventListener('touchstart', onTouchStart, { passive: true })
-      vp.addEventListener('touchend', onTouchEnd, { passive: true })
-
       const onKey = (e: KeyboardEvent) => {
         if (e.key === 'ArrowRight' || e.key === ' ') rendition.next()
         else if (e.key === 'ArrowLeft') rendition.prev()
@@ -332,8 +365,7 @@ export function Reader() {
       window.addEventListener('keydown', onKey)
 
       cleanup = () => {
-        vp.removeEventListener('touchstart', onTouchStart)
-        vp.removeEventListener('touchend', onTouchEnd)
+        for (const fn of iframeCleanups) fn()
         window.removeEventListener('keydown', onKey)
         try { rendition.off('selected', onSelected as never) } catch { /* */ }
       }
@@ -358,17 +390,6 @@ export function Reader() {
       bookRef.current = null
     }
   }, [bookId, nav])
-
-  const onViewportClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (window.getSelection()?.toString()) return
-    if (selection) return
-    if (!renditionRef.current) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const w = rect.width
-    if (x < w * 0.25) renditionRef.current.prev()
-    else if (x > w * 0.75) renditionRef.current.next()
-  }
 
   const handleHighlight = async () => {
     if (!selection || !bookId || !renditionRef.current) return
@@ -572,7 +593,17 @@ export function Reader() {
         onOpenToc={() => setTocOpen(true)}
         onOpenDisplay={() => setDisplayOpen(true)}
       />
-      <div ref={viewportRef} className="reader__viewport" onClick={onViewportClick}>
+      <div ref={viewportRef} className="reader__viewport">
+        <button
+          className="reader__tap reader__tap--left"
+          aria-label="previous page"
+          onClick={() => renditionRef.current?.prev()}
+        />
+        <button
+          className="reader__tap reader__tap--right"
+          aria-label="next page"
+          onClick={() => renditionRef.current?.next()}
+        />
         {loading && <div className="reader__loading">opening…</div>}
       </div>
       <div className="reader__progress">

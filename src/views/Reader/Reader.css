@@ -49,6 +49,23 @@
   overflow: hidden;
 }
 
+.reader__tap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 22%;
+  z-index: 5;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.reader__tap--left { left: 0; }
+.reader__tap--right { right: 0; }
+.reader__tap:active {
+  background: rgba(0, 0, 0, 0.03);
+}
+
 .reader__progress {
   flex: 0 0 auto;
   height: 1px;
