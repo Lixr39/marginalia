@@ -10,6 +10,7 @@ import { CharacterPicker } from './CharacterPicker'
 import { FreeNoteEditor } from './FreeNoteEditor'
 import { TocDrawer, type TocEntry } from './TocDrawer'
 import { DisplaySheet } from './DisplaySheet'
+import { setupIframeGestures } from './iframeGestures'
 import type { ReadingMode } from '../../types'
 import {
   getBook,
@@ -175,78 +176,52 @@ export function Reader() {
       renditionRef.current = rendition
 
       const cAccent = styles.getPropertyValue('--c-accent').trim() || '#c87894'
-      rendition.themes.default({
-        body: {
-          'font-family': 'Georgia, "Source Han Serif SC", "Songti SC", serif',
-          'font-size': `${fontSize}px`,
-          'line-height': '1.75',
-          'color': cText,
-          'background': cBg,
-          'padding': '0 6px',
-        },
-        'p': { 'margin': '0.6em 0', 'text-indent': '2em' },
-        'h1, h2, h3, h4': {
-          'font-family': '"Source Han Serif SC", "Songti SC", Georgia, serif',
-          'font-weight': '500',
-          'color': cText,
-          'text-indent': '0',
-        },
-        'p:first-of-type::first-letter, h1 + p::first-letter, h2 + p::first-letter, h3 + p::first-letter': {
-          'float': 'left',
-          'font-family': 'Georgia, "Source Han Serif SC", "Songti SC", serif',
-          'font-size': '3.4em',
-          'line-height': '0.9',
-          'margin': '0.05em 0.12em 0 0',
-          'color': cAccent,
-        },
-        '::selection': { 'background': cSel },
-      })
 
-      // ===== Touch swipe / tap navigation INSIDE the chapter iframe =====
-      // MUST be registered BEFORE rendition.display() so the hook fires
-      // for the first chapter too. epubjs runs hooks on every chapter load.
+      // ===== iframe setup: gestures + selection (foliate-js approach) =====
+      // Critical insight: touch-action MUST be on the iframe ELEMENT in parent
+      // (set inside setupIframeGestures), NOT iframe body via epubjs themes.
+      // Hook fires for every chapter load. We also poll after display() as
+      // a belt+braces in case the hook races on the first chapter.
       const iframeCleanups: Array<() => void> = []
-      const attachTouchHandlers = (doc: Document, win: Window) => {
-        let sx = 0, sy = 0, st = 0
-        const onTouchStart = (e: TouchEvent) => {
-          if (win.getSelection()?.toString()) return
-          if (e.touches.length !== 1) return
-          sx = e.touches[0].clientX
-          sy = e.touches[0].clientY
-          st = Date.now()
-        }
-        const onTouchEnd = (e: TouchEvent) => {
-          if (win.getSelection()?.toString()) return
-          if (!st) return
-          const dx = e.changedTouches[0].clientX - sx
-          const dy = Math.abs(e.changedTouches[0].clientY - sy)
-          const dt = Date.now() - st
-          st = 0
-          if (dt > 600) return
-          if (dy > 40) return
-          if (dx < -40) rendition.next()
-          else if (dx > 40) rendition.prev()
-        }
-        const onClick = (e: MouseEvent) => {
-          if (win.getSelection()?.toString()) return
-          const rect = doc.documentElement.getBoundingClientRect()
-          const x = e.clientX - rect.left
-          const w = rect.width
-          if (x < w * 0.25) rendition.prev()
-          else if (x > w * 0.75) rendition.next()
-        }
-        doc.addEventListener('touchstart', onTouchStart, { passive: true })
-        doc.addEventListener('touchend', onTouchEnd, { passive: true })
-        doc.addEventListener('click', onClick)
-        iframeCleanups.push(() => {
-          doc.removeEventListener('touchstart', onTouchStart)
-          doc.removeEventListener('touchend', onTouchEnd)
-          doc.removeEventListener('click', onClick)
+      const attachedDocs = new WeakSet<Document>()
+
+      const wireOne = (doc: Document, win: Window) => {
+        if (attachedDocs.has(doc)) return
+        attachedDocs.add(doc)
+        const cleanup = setupIframeGestures(doc, win, {
+          rendition,
+          iframeContainer: viewportRef.current!,
+          fontSize,
+          cBg, cText, cAccent, cSel,
+          onPrev: () => rendition.prev(),
+          onNext: () => rendition.next(),
+          onSelection: (payload) => {
+            if (!payload) {
+              setSelection(null)
+              return
+            }
+            // Derive epubcfi from the range via Contents (epubjs internal).
+            let cfiRange = ''
+            try {
+              const contentsList = (rendition as unknown as { getContents?: () => Array<{ cfiFromRange?: (r: Range) => string }> }).getContents?.()
+              const cnt = contentsList?.[0]
+              if (cnt?.cfiFromRange) cfiRange = cnt.cfiFromRange(payload.range)
+            } catch { /* */ }
+            setSelection({
+              cfiRange,
+              text: payload.text,
+              x: payload.x,
+              y: payload.y,
+            })
+          },
+          reapplyHighlights: () => {/* nothing for now */},
         })
+        iframeCleanups.push(cleanup)
       }
+
       rendition.hooks.content.register((contents: Contents) => {
         const c = contents as unknown as { document?: Document; window?: Window }
-        if (c.document && c.window) attachTouchHandlers(c.document, c.window)
+        if (c.document && c.window) wireOne(c.document, c.window)
       })
 
       const startCfi = stored.bookState.currentLocation || undefined
@@ -256,19 +231,16 @@ export function Reader() {
         await rendition.display()
       }
 
-      // Belt + braces: if the hook didn't catch the first iframe (race condition
-      // on some epubjs versions), grab it directly and wire it now.
-      setTimeout(() => {
+      // Fallback poll — sometimes the hook races on first chapter
+      const pollIframe = (tries: number) => {
         const ifr = viewportRef.current?.querySelector('iframe') as HTMLIFrameElement | null
         if (ifr?.contentDocument && ifr.contentWindow) {
-          // dedupe: if we already attached, the listeners are idempotent-safe
-          // because we attach by reference; second attach is a no-op visible side
-          // effect (slightly more handlers) but harmless. Only do this if hook count == 0.
-          if (iframeCleanups.length === 0) {
-            attachTouchHandlers(ifr.contentDocument, ifr.contentWindow)
-          }
+          wireOne(ifr.contentDocument, ifr.contentWindow)
+          return
         }
-      }, 300)
+        if (tries > 0) setTimeout(() => pollIframe(tries - 1), 200)
+      }
+      pollIframe(8)
 
       // restore existing highlights + bookmarks state
       const existingHls = stored.bookState.highlights ?? []
@@ -332,32 +304,6 @@ export function Reader() {
         setSelection(null)
       })
 
-      const onSelected = (cfiRange: string, contents: Contents) => {
-        const win = (contents as unknown as { window: Window }).window
-        const sel = win.getSelection()
-        const text = sel?.toString().trim() ?? ''
-        if (!text) {
-          setSelection(null)
-          return
-        }
-        const range = sel?.rangeCount ? sel.getRangeAt(0) : null
-        if (!range) {
-          setSelection(null)
-          return
-        }
-        const r = range.getBoundingClientRect()
-        const iframe = viewportRef.current?.querySelector('iframe')
-        const iframeRect = iframe?.getBoundingClientRect()
-        if (!iframeRect) {
-          setSelection(null)
-          return
-        }
-        const x = iframeRect.left + r.left + r.width / 2
-        const y = iframeRect.top + r.top
-        setSelection({ cfiRange, text, x, y })
-      }
-      rendition.on('selected', onSelected)
-
       const onKey = (e: KeyboardEvent) => {
         if (e.key === 'ArrowRight' || e.key === ' ') rendition.next()
         else if (e.key === 'ArrowLeft') rendition.prev()
@@ -367,7 +313,6 @@ export function Reader() {
       cleanup = () => {
         for (const fn of iframeCleanups) fn()
         window.removeEventListener('keydown', onKey)
-        try { rendition.off('selected', onSelected as never) } catch { /* */ }
       }
 
       setLoading(false)
