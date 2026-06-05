@@ -183,16 +183,6 @@ export function Reader() {
           'color': cText,
           'background': cBg,
           'padding': '0 6px',
-          // iOS: we handle horizontal swipes; vertical scroll + pinch stay native
-          'touch-action': 'pan-y pinch-zoom',
-          // iOS: suppress native copy/lookup menu; we render our own bubble
-          '-webkit-touch-callout': 'none',
-          // but keep selection itself working
-          '-webkit-user-select': 'text',
-          'user-select': 'text',
-        },
-        'html': {
-          'touch-action': 'pan-y pinch-zoom',
         },
         'p': { 'margin': '0.6em 0', 'text-indent': '2em' },
         'h1, h2, h3, h4': {
@@ -213,63 +203,45 @@ export function Reader() {
       })
 
       // ===== Touch swipe / tap navigation INSIDE the chapter iframe =====
-      // Register BEFORE rendition.display() so the hook fires for the first chapter.
-      // The handlers detect horizontal swipes (call rendition.next/prev),
-      // OR short taps in left/right 28% (also page-turn — covers iframe area
-      // since outer-React .reader__tap doesn't reach inside iframe).
-      // Long-press / vertical scroll / multi-touch are not intercepted.
+      // MUST be registered BEFORE rendition.display() so the hook fires
+      // for the first chapter too. epubjs runs hooks on every chapter load.
       const iframeCleanups: Array<() => void> = []
-      const attachedDocs = new WeakSet<Document>()
       const attachTouchHandlers = (doc: Document, win: Window) => {
-        if (attachedDocs.has(doc)) return
-        attachedDocs.add(doc)
         let sx = 0, sy = 0, st = 0
-        let moved = false
         const onTouchStart = (e: TouchEvent) => {
+          if (win.getSelection()?.toString()) return
           if (e.touches.length !== 1) return
           sx = e.touches[0].clientX
           sy = e.touches[0].clientY
           st = Date.now()
-          moved = false
-        }
-        const onTouchMove = (e: TouchEvent) => {
-          if (!st || e.touches.length !== 1) return
-          const dx = Math.abs(e.touches[0].clientX - sx)
-          const dy = Math.abs(e.touches[0].clientY - sy)
-          if (dx > 6 || dy > 6) moved = true
         }
         const onTouchEnd = (e: TouchEvent) => {
+          if (win.getSelection()?.toString()) return
           if (!st) return
-          // if user is selecting text, don't intercept
-          if (win.getSelection()?.toString()) { st = 0; return }
           const dx = e.changedTouches[0].clientX - sx
           const dy = Math.abs(e.changedTouches[0].clientY - sy)
           const dt = Date.now() - st
-          const wasMoved = moved
           st = 0
-          moved = false
-          if (dt > 700) return  // long press, leave to selection
-          // horizontal swipe
-          if (wasMoved && dy < 40) {
-            if (dx < -40) { rendition.next(); return }
-            if (dx > 40) { rendition.prev(); return }
-          }
-          // short tap in left/right 28% → page turn
-          if (!wasMoved && dt < 400) {
-            const rect = doc.documentElement.getBoundingClientRect()
-            const x = e.changedTouches[0].clientX - rect.left
-            const w = rect.width
-            if (x < w * 0.28) rendition.prev()
-            else if (x > w * 0.72) rendition.next()
-          }
+          if (dt > 600) return
+          if (dy > 40) return
+          if (dx < -40) rendition.next()
+          else if (dx > 40) rendition.prev()
+        }
+        const onClick = (e: MouseEvent) => {
+          if (win.getSelection()?.toString()) return
+          const rect = doc.documentElement.getBoundingClientRect()
+          const x = e.clientX - rect.left
+          const w = rect.width
+          if (x < w * 0.25) rendition.prev()
+          else if (x > w * 0.75) rendition.next()
         }
         doc.addEventListener('touchstart', onTouchStart, { passive: true })
-        doc.addEventListener('touchmove', onTouchMove, { passive: true })
         doc.addEventListener('touchend', onTouchEnd, { passive: true })
+        doc.addEventListener('click', onClick)
         iframeCleanups.push(() => {
           doc.removeEventListener('touchstart', onTouchStart)
-          doc.removeEventListener('touchmove', onTouchMove)
           doc.removeEventListener('touchend', onTouchEnd)
+          doc.removeEventListener('click', onClick)
         })
       }
       rendition.hooks.content.register((contents: Contents) => {
@@ -284,16 +256,19 @@ export function Reader() {
         await rendition.display()
       }
 
-      // Fallback: try direct iframe lookup in case the hook missed
-      const pollIframe = (tries: number) => {
+      // Belt + braces: if the hook didn't catch the first iframe (race condition
+      // on some epubjs versions), grab it directly and wire it now.
+      setTimeout(() => {
         const ifr = viewportRef.current?.querySelector('iframe') as HTMLIFrameElement | null
         if (ifr?.contentDocument && ifr.contentWindow) {
-          attachTouchHandlers(ifr.contentDocument, ifr.contentWindow)
-          return
+          // dedupe: if we already attached, the listeners are idempotent-safe
+          // because we attach by reference; second attach is a no-op visible side
+          // effect (slightly more handlers) but harmless. Only do this if hook count == 0.
+          if (iframeCleanups.length === 0) {
+            attachTouchHandlers(ifr.contentDocument, ifr.contentWindow)
+          }
         }
-        if (tries > 0) setTimeout(() => pollIframe(tries - 1), 200)
-      }
-      pollIframe(5)
+      }, 300)
 
       // restore existing highlights + bookmarks state
       const existingHls = stored.bookState.highlights ?? []
