@@ -49,21 +49,56 @@
   overflow: hidden;
 }
 
-.reader__tap {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 22%;
-  z-index: 5;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
+/* Scroll-mode: iframe scrolls naturally, no overlays needed */
+.reader__viewport iframe {
+  width: 100% !important;
+  height: 100% !important;
 }
-.reader__tap--left { left: 0; }
-.reader__tap--right { right: 0; }
-.reader__tap:active {
-  background: rgba(0, 0, 0, 0.03);
+
+/* Floating "selection pill" — appears at bottom when user has text selected */
+.reader__selection-pill {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #2c2820;
+  color: #f5f0e8;
+  border-radius: 22px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.3);
+  z-index: 60;
+  animation: pill-rise 180ms ease-out;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
+}
+@keyframes pill-rise {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.reader__sel-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 17px;
+  padding: 4px 4px;
+  cursor: pointer;
+  opacity: 0.75;
+  line-height: 1;
+}
+.reader__sel-btn--primary {
+  opacity: 1;
+  color: #ffd07a;
+  font-weight: 600;
+  font-family: var(--font-zh-serif);
+  font-size: 14px;
+  padding: 4px 8px;
+}
+.reader__sel-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255,255,255,0.2);
 }
 
 .reader__progress {

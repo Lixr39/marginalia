@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import ePub, { type Rendition, type Book, type Contents } from 'epubjs'
 import { ChapterChrome } from './ChapterChrome'
-import { SelectionBubble } from './SelectionBubble'
 import { NoteModal } from './NoteModal'
 import { AnnotationsDrawer } from './AnnotationsDrawer'
 import { AIPanel } from './AIPanel'
@@ -10,7 +9,6 @@ import { CharacterPicker } from './CharacterPicker'
 import { FreeNoteEditor } from './FreeNoteEditor'
 import { TocDrawer, type TocEntry } from './TocDrawer'
 import { DisplaySheet } from './DisplaySheet'
-import { setupIframeGestures } from './iframeGestures'
 import type { ReadingMode } from '../../types'
 import {
   getBook,
@@ -170,58 +168,72 @@ export function Reader() {
         width: '100%',
         height: '100%',
         spread: 'none',
-        flow: 'paginated',
-        manager: 'default',
+        flow: 'scrolled-doc',   // ← was 'paginated'; iOS Safari + iframe paged-mode is a death trap
+        manager: 'continuous',
       })
       renditionRef.current = rendition
 
-      const cAccent = styles.getPropertyValue('--c-accent').trim() || '#c87894'
+      // Editorial theme — minimal, focused on readability in scroll mode
+      rendition.themes.default({
+        body: {
+          'font-family': 'Georgia, "Source Han Serif SC", "Songti SC", serif',
+          'font-size': `${fontSize}px`,
+          'line-height': '1.75',
+          'color': cText,
+          'background': cBg,
+          'padding': '8px 6px',
+        },
+        'p': { 'margin': '0.7em 0', 'text-indent': '2em' },
+        'h1, h2, h3, h4': {
+          'font-family': '"Source Han Serif SC", "Songti SC", Georgia, serif',
+          'font-weight': '500',
+          'color': cText,
+          'text-indent': '0',
+          'margin-top': '1.4em',
+        },
+        '::selection': { 'background': cSel },
+      })
 
-      // ===== iframe setup: gestures + selection (foliate-js approach) =====
-      // Critical insight: touch-action MUST be on the iframe ELEMENT in parent
-      // (set inside setupIframeGestures), NOT iframe body via epubjs themes.
-      // Hook fires for every chapter load. We also poll after display() as
-      // a belt+braces in case the hook races on the first chapter.
+      // ===== Selection watcher — runs in every chapter iframe =====
+      // In scroll mode we let iOS handle native selection (no fighting it).
+      // We just observe: when selection is non-empty, surface a floating
+      // "Ask AI" pill in the parent UI. User taps it to summon the AI panel
+      // with whatever they currently have selected.
       const iframeCleanups: Array<() => void> = []
       const attachedDocs = new WeakSet<Document>()
 
-      const wireOne = (doc: Document, win: Window) => {
+      const wireSelection = (doc: Document, win: Window) => {
         if (attachedDocs.has(doc)) return
         attachedDocs.add(doc)
-        const cleanup = setupIframeGestures(doc, win, {
-          rendition,
-          iframeContainer: viewportRef.current!,
-          fontSize,
-          cBg, cText, cAccent, cSel,
-          onPrev: () => rendition.prev(),
-          onNext: () => rendition.next(),
-          onSelection: (payload) => {
-            if (!payload) {
-              setSelection(null)
-              return
-            }
-            // Derive epubcfi from the range via Contents (epubjs internal).
-            let cfiRange = ''
-            try {
-              const contentsList = (rendition as unknown as { getContents?: () => Array<{ cfiFromRange?: (r: Range) => string }> }).getContents?.()
-              const cnt = contentsList?.[0]
-              if (cnt?.cfiFromRange) cfiRange = cnt.cfiFromRange(payload.range)
-            } catch { /* */ }
-            setSelection({
-              cfiRange,
-              text: payload.text,
-              x: payload.x,
-              y: payload.y,
-            })
-          },
-          reapplyHighlights: () => {/* nothing for now */},
+
+        const onSelectionChange = () => {
+          const sel = win.getSelection()
+          const text = sel?.toString().trim() ?? ''
+          if (!text) {
+            setSelection(null)
+            return
+          }
+          const range = sel?.rangeCount ? sel.getRangeAt(0) : null
+          if (!range) return
+          // Derive cfi via epubjs Contents (best-effort)
+          let cfiRange = ''
+          try {
+            const contentsList = (rendition as unknown as { getContents?: () => Array<{ cfiFromRange?: (r: Range) => string }> }).getContents?.()
+            const cnt = contentsList?.find(c => c?.cfiFromRange)
+            if (cnt?.cfiFromRange) cfiRange = cnt.cfiFromRange(range)
+          } catch { /* */ }
+          // (x, y) only used for legacy bubble; in scroll mode we use a floating pill instead
+          setSelection({ cfiRange, text, x: 0, y: 0 })
+        }
+        doc.addEventListener('selectionchange', onSelectionChange)
+        iframeCleanups.push(() => {
+          doc.removeEventListener('selectionchange', onSelectionChange)
         })
-        iframeCleanups.push(cleanup)
       }
 
       rendition.hooks.content.register((contents: Contents) => {
         const c = contents as unknown as { document?: Document; window?: Window }
-        if (c.document && c.window) wireOne(c.document, c.window)
+        if (c.document && c.window) wireSelection(c.document, c.window)
       })
 
       const startCfi = stored.bookState.currentLocation || undefined
@@ -230,17 +242,6 @@ export function Reader() {
       } catch {
         await rendition.display()
       }
-
-      // Fallback poll — sometimes the hook races on first chapter
-      const pollIframe = (tries: number) => {
-        const ifr = viewportRef.current?.querySelector('iframe') as HTMLIFrameElement | null
-        if (ifr?.contentDocument && ifr.contentWindow) {
-          wireOne(ifr.contentDocument, ifr.contentWindow)
-          return
-        }
-        if (tries > 0) setTimeout(() => pollIframe(tries - 1), 200)
-      }
-      pollIframe(8)
 
       // restore existing highlights + bookmarks state
       const existingHls = stored.bookState.highlights ?? []
@@ -539,16 +540,6 @@ export function Reader() {
         onOpenDisplay={() => setDisplayOpen(true)}
       />
       <div ref={viewportRef} className="reader__viewport">
-        <button
-          className="reader__tap reader__tap--left"
-          aria-label="previous page"
-          onClick={() => renditionRef.current?.prev()}
-        />
-        <button
-          className="reader__tap reader__tap--right"
-          aria-label="next page"
-          onClick={() => renditionRef.current?.next()}
-        />
         {loading && <div className="reader__loading">opening…</div>}
       </div>
       <div className="reader__progress">
@@ -561,14 +552,26 @@ export function Reader() {
       </div>
 
       {selection && (
-        <SelectionBubble
-          x={selection.x}
-          y={selection.y}
-          characterName={isRoundtable ? `圆桌·${roundtableChars.length}` : (activeChar?.name ?? '虚无主义者')}
-          onHighlight={handleHighlight}
-          onNote={handleNoteFromSelection}
-          onAskAI={handleAskAI}
-        />
+        <div className="reader__selection-pill">
+          <button
+            className="reader__sel-btn"
+            onClick={handleHighlight}
+            aria-label="highlight"
+          >🖍️</button>
+          <span className="reader__sel-divider" />
+          <button
+            className="reader__sel-btn"
+            onClick={handleNoteFromSelection}
+            aria-label="note"
+          >📝</button>
+          <span className="reader__sel-divider" />
+          <button
+            className="reader__sel-btn reader__sel-btn--primary"
+            onClick={handleAskAI}
+          >
+            问 {isRoundtable ? `圆桌·${roundtableChars.length}` : (activeChar?.name ?? '虚无主义者')} →
+          </button>
+        </div>
       )}
 
       {tappedHl && (
