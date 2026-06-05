@@ -183,6 +183,16 @@ export function Reader() {
           'color': cText,
           'background': cBg,
           'padding': '0 6px',
+          // iOS: we handle horizontal swipes; vertical scroll + pinch stay native
+          'touch-action': 'pan-y pinch-zoom',
+          // iOS: suppress native copy/lookup menu; we render our own bubble
+          '-webkit-touch-callout': 'none',
+          // but keep selection itself working
+          '-webkit-user-select': 'text',
+          'user-select': 'text',
+        },
+        'html': {
+          'touch-action': 'pan-y pinch-zoom',
         },
         'p': { 'margin': '0.6em 0', 'text-indent': '2em' },
         'h1, h2, h3, h4': {
@@ -202,35 +212,19 @@ export function Reader() {
         '::selection': { 'background': cSel },
       })
 
-      // ===== iframe setup: inject CSS + bind gesture/selection handlers =====
-      // Done via hooks.content.register so it runs for EVERY chapter iframe
-      // (epubjs creates a new iframe document per chapter in paginated mode).
-      // Direct <style> injection is more reliable than themes.default() for
-      // touch-action / -webkit-touch-callout on iOS Safari.
+      // ===== Touch swipe / tap navigation INSIDE the chapter iframe =====
+      // Register BEFORE rendition.display() so the hook fires for the first chapter.
+      // The handlers detect horizontal swipes (call rendition.next/prev),
+      // OR short taps in left/right 28% (also page-turn — covers iframe area
+      // since outer-React .reader__tap doesn't reach inside iframe).
+      // Long-press / vertical scroll / multi-touch are not intercepted.
       const iframeCleanups: Array<() => void> = []
       const attachedDocs = new WeakSet<Document>()
-
-      const setupIframe = (doc: Document, win: Window) => {
+      const attachTouchHandlers = (doc: Document, win: Window) => {
         if (attachedDocs.has(doc)) return
         attachedDocs.add(doc)
-
-        // 1) Inject style tag with iOS-critical rules
-        const style = doc.createElement('style')
-        style.id = 'marginalia-ios-fix'
-        style.textContent = `
-          html, body {
-            touch-action: pan-y pinch-zoom !important;
-            -webkit-touch-callout: none !important;
-          }
-          body {
-            -webkit-user-select: text !important;
-            user-select: text !important;
-          }
-        `
-        doc.head?.appendChild(style)
-
-        // 2) Touch handlers for swipe + edge-tap page turning
-        let sx = 0, sy = 0, st = 0, moved = false
+        let sx = 0, sy = 0, st = 0
+        let moved = false
         const onTouchStart = (e: TouchEvent) => {
           if (e.touches.length !== 1) return
           sx = e.touches[0].clientX
@@ -246,6 +240,7 @@ export function Reader() {
         }
         const onTouchEnd = (e: TouchEvent) => {
           if (!st) return
+          // if user is selecting text, don't intercept
           if (win.getSelection()?.toString()) { st = 0; return }
           const dx = e.changedTouches[0].clientX - sx
           const dy = Math.abs(e.changedTouches[0].clientY - sy)
@@ -253,11 +248,13 @@ export function Reader() {
           const wasMoved = moved
           st = 0
           moved = false
-          if (dt > 700) return
+          if (dt > 700) return  // long press, leave to selection
+          // horizontal swipe
           if (wasMoved && dy < 40) {
             if (dx < -40) { rendition.next(); return }
             if (dx > 40) { rendition.prev(); return }
           }
+          // short tap in left/right 28% → page turn
           if (!wasMoved && dt < 400) {
             const rect = doc.documentElement.getBoundingClientRect()
             const x = e.changedTouches[0].clientX - rect.left
@@ -269,17 +266,15 @@ export function Reader() {
         doc.addEventListener('touchstart', onTouchStart, { passive: true })
         doc.addEventListener('touchmove', onTouchMove, { passive: true })
         doc.addEventListener('touchend', onTouchEnd, { passive: true })
-
         iframeCleanups.push(() => {
           doc.removeEventListener('touchstart', onTouchStart)
           doc.removeEventListener('touchmove', onTouchMove)
           doc.removeEventListener('touchend', onTouchEnd)
         })
       }
-
       rendition.hooks.content.register((contents: Contents) => {
         const c = contents as unknown as { document?: Document; window?: Window }
-        if (c.document && c.window) setupIframe(c.document, c.window)
+        if (c.document && c.window) attachTouchHandlers(c.document, c.window)
       })
 
       const startCfi = stored.bookState.currentLocation || undefined
@@ -289,16 +284,16 @@ export function Reader() {
         await rendition.display()
       }
 
-      // Fallback: direct iframe lookup in case the hook missed
+      // Fallback: try direct iframe lookup in case the hook missed
       const pollIframe = (tries: number) => {
         const ifr = viewportRef.current?.querySelector('iframe') as HTMLIFrameElement | null
         if (ifr?.contentDocument && ifr.contentWindow) {
-          setupIframe(ifr.contentDocument, ifr.contentWindow)
+          attachTouchHandlers(ifr.contentDocument, ifr.contentWindow)
           return
         }
         if (tries > 0) setTimeout(() => pollIframe(tries - 1), 200)
       }
-      pollIframe(8)
+      pollIframe(5)
 
       // restore existing highlights + bookmarks state
       const existingHls = stored.bookState.highlights ?? []
